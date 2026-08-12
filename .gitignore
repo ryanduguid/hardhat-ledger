@@ -1,0 +1,64 @@
+# Client data must never enter this repo.
+# Anything exported from a ledger, a payroll system, a contract register or a
+# plant management system stays out.
+input/
+output/
+clients/
+exports/
+contracts/
+claims/
+
+# Data-file extensions (ledger exports, workbooks, statements, claim schedules)
+*.xlsx
+*.xlsm
+*.xlsb
+*.xls
+*.xlt
+*.xltx
+*.xltm
+*.csv
+*.txt
+*.pdf
+*.aba
+*.ofx
+*.qif
+*.zip
+*.myox
+*.myo
+*.bak
+
+# Generated-workpaper formats (the skills route packs to output/, ignored
+# above; this catches strays written anywhere else)
+*.docx
+*.doc
+*.json
+*.md
+# *.json must not swallow config that has to ship. Keep these trackable and
+# nothing wider: settings.local.json and any MCP or token JSON stay out.
+!.claude/skills/**/*.json
+!.claude-plugin/marketplace.json
+.claude/settings.local.json
+# *.md must not swallow the repo's own docs. A claim schedule or defects
+# register written as Markdown is the stray being caught here. Any future
+# tracked Markdown needs its own negation added below.
+!README.md
+!SECURITY.md
+!CONTRIBUTING.md
+!.claude/skills/**/*.md
+!templates/**/*.example
+
+# Client-named data files (scoped to data extensions so docs and skills named
+# "client-*" are never silently swallowed). Keep these below any sample
+# re-includes — last match wins.
+*client*.csv
+*client*.xlsx
+*client*.pdf
+
+# Python
+__pycache__/
+*.py[cod]
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
