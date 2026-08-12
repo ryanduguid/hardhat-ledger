@@ -1,0 +1,42 @@
+{
+  "name": "ryanduguid-contracting",
+  "description": "Ryan Duguid's Claude Code plugins for Australian contracting and subcontractor accounting work.",
+  "owner": {
+    "name": "Ryan Duguid"
+  },
+  "plugins": [
+    {
+      "name": "subcontractor-accounting-skills",
+      "description": "Workflow skills for Australian subcontractor accounting: progress claims, retentions, work in progress and over/under-billing, contract cost tracking, plus the regimes a mining-services or earthmoving subcontractor lives with - fuel tax credits, the Coal LSL levy, payroll tax contractor provisions, plant costing, and contractor superannuation and TPAR. Each skill encodes the process and the tie-outs, and sends the agent to the primary source for rates, thresholds and statutory timeframes.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Ryan Duguid"
+      },
+      "category": "productivity",
+      "tags": [
+        "accounting",
+        "australia",
+        "construction",
+        "mining",
+        "contracting",
+        "payroll-tax"
+      ],
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./.claude/skills/coal-lsl-levy",
+        "./.claude/skills/contract-cost-tracking",
+        "./.claude/skills/contracting-exports",
+        "./.claude/skills/contractor-super-tpar",
+        "./.claude/skills/fuel-tax-credits",
+        "./.claude/skills/payroll-tax-contractors",
+        "./.claude/skills/plant-and-equipment-costing",
+        "./.claude/skills/progress-claim-preparation",
+        "./.claude/skills/retention-schedule",
+        "./.claude/skills/wip-over-under-billing"
+      ],
+      "homepage": "https://github.com/ryanduguid/subcontractor-accounting-skills",
+      "license": "MIT"
+    }
+  ]
+}
