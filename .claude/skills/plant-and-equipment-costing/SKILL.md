@@ -1,6 +1,6 @@
 ---
 name: plant-and-equipment-costing
-description: Use when costing plant per machine or settling its tax and accounting treatment: standing versus running cost, the hour denominator and utilisation, wet versus dry hire, effective life and decline in value, and hire purchase versus chattel mortgage versus lease.
+description: "Use when costing plant per machine or settling its tax and accounting treatment: standing versus running cost, the hour denominator and utilisation, wet versus dry hire, effective life and decline in value, and hire purchase versus chattel mortgage versus lease."
 ---
 
 # Plant and Equipment Costing

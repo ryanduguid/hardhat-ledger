@@ -1,6 +1,6 @@
 ---
 name: progress-claim-preparation
-description: Use when building or reviewing a construction progress payment claim in NSW or Queensland: measured quantities, variations, materials, retention withheld, GST, the claim trigger date, and the statutory content a valid claim must carry.
+description: "Use when building or reviewing a construction progress payment claim in NSW or Queensland: measured quantities, variations, materials, retention withheld, GST, the claim trigger date, and the statutory content a valid claim must carry."
 ---
 
 # Progress Claim Preparation

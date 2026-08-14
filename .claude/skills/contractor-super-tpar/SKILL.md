@@ -1,6 +1,6 @@
 ---
 name: contractor-super-tpar
-description: Use when a business pays subcontractors and needs its own obligations worked out: superannuation under the extended definition in SGAA s 12(3), the taxable payments annual report, and withholding where no ABN is quoted.
+description: "Use when a business pays subcontractors and needs its own obligations worked out: superannuation under the extended definition in SGAA s 12(3), the taxable payments annual report, and withholding where no ABN is quoted."
 ---
 
 # Contractor Super And TPAR
