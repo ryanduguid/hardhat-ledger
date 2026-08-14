@@ -47,6 +47,7 @@ claims/
 !CONTRIBUTING.md
 !.claude/skills/**/*.md
 !templates/**/*.example
+!docs/**/*.md
 
 # Client-named data files (scoped to data extensions so docs and skills named
 # "client-*" are never silently swallowed). Keep these below any sample

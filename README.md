@@ -98,6 +98,20 @@ professional judgement stay with a person.
 
 Nothing here is tax, accounting or legal advice.
 
+## Source assurance
+
+The skills use current primary legislation and authoritative decisions as the
+controlling sources, with regulator pages as secondary operational guidance.
+Where those sources conflict, the skill records the discrepancy and sends the
+coverage or action decision to a qualified person instead of resolving it
+autonomously.
+
+The focused NSW construction, retention-trust and contractor-super/TPAR review
+is recorded in
+[docs/source-review-2026-08-15.md](docs/source-review-2026-08-15.md).
+Every source must still be checked for amendments and current status when a
+skill is used.
+
 ## Verification
 
 Python 3.10 or newer, standard library only.
