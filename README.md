@@ -112,6 +112,20 @@ is recorded in
 Every source must still be checked for amendments and current status when a
 skill is used.
 
+## Releases and provenance
+
+Starting with the planned `v0.1.1` process, new releases package all 10
+discoverable skills and the marketplace metadata as deterministic UTC/LF source
+archives. Each such release includes SHA-256 checksums, an SPDX 2.3 SBOM, and
+GitHub build and SBOM attestations. The marketplace deliberately has no pinned
+version that could make discovery stale.
+
+These remain review-schedule skills, not SG or TPAR calculators or final tax,
+accounting or legal advice. Use still requires current-source checks and
+qualified human review. See [RELEASING.md](RELEASING.md) for the operator gate
+and verification procedure, and
+[the v0.1.1 notes](docs/releases/v0.1.1.md) for the release boundary.
+
 ## Verification
 
 Python 3.10 or newer, standard library only.

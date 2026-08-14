@@ -27,6 +27,7 @@ claims/
 *.myox
 *.myo
 *.bak
+dist/
 
 # Generated-workpaper formats (the skills route packs to output/, ignored
 # above; this catches strays written anywhere else)
@@ -45,6 +46,7 @@ claims/
 !README.md
 !SECURITY.md
 !CONTRIBUTING.md
+!RELEASING.md
 !.claude/skills/**/*.md
 !templates/**/*.example
 !docs/**/*.md
