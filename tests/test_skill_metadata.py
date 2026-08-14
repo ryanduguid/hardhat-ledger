@@ -168,9 +168,13 @@ class SkillMetadataTests(unittest.TestCase):
                 encoding="utf-8"
             )
         )
+        self.assertNotIn("version", marketplace)
         self.assertEqual(len(marketplace.get("plugins", [])), 1)
-        declared = marketplace["plugins"][0].get("skills")
+        plugin = marketplace["plugins"][0]
+        self.assertNotIn("version", plugin)
+        declared = plugin.get("skills")
         self.assertIsInstance(declared, list)
+        self.assertEqual(len(declared), 10)
         self.assertEqual(len(declared), len(set(declared)))
 
         root = REPOSITORY.resolve()
