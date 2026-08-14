@@ -79,15 +79,30 @@ class ReleaseWorkflowTests(unittest.TestCase):
     def test_draft_and_exact_assets_are_verified_before_publication(self) -> None:
         text = RELEASE_WORKFLOW.read_text(encoding="utf-8")
         draft_create = text.index('gh release create "${tag}"')
+        draft_lookup = text.index('select(.tag_name == \\"${tag}\\" and .draft == true)')
         draft_verify = text.index('The release was not created as a draft')
         asset_verify = text.index('The draft release does not contain the exact asset set')
-        publish = text.index('gh release edit "${tag}" --draft=false')
+        publish = text.index('"repos/${GITHUB_REPOSITORY}/releases/${release_id}"')
+        publish = text.index('--method PATCH', publish)
         immutable_readback = text.index('Published release is not immutable')
-        self.assertLess(draft_create, draft_verify)
+        self.assertLess(draft_create, draft_lookup)
+        self.assertLess(draft_lookup, draft_verify)
         self.assertLess(draft_verify, asset_verify)
         self.assertLess(asset_verify, publish)
         self.assertLess(publish, immutable_readback)
         self.assertEqual(text.count('"dist/SHA256SUMS#SHA-256 checksums"'), 1)
+
+    def test_draft_lookup_includes_unpublished_releases(self) -> None:
+        text = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+        self.assertGreaterEqual(text.count("releases?per_page=100"), 2)
+        self.assertIn('select(.tag_name == \\"${tag}\\")', text)
+        self.assertIn(
+            'select(.tag_name == \\"${tag}\\" and .draft == true)', text
+        )
+        self.assertIn('"repos/${GITHUB_REPOSITORY}/releases/${release_id}"', text)
+        after_create = text.split("gh release create", maxsplit=1)[1]
+        before_publish = after_create.split("--method PATCH", maxsplit=1)[0]
+        self.assertNotIn('releases/tags/${tag}', before_publish)
 
     def test_release_notes_state_the_regulated_human_review_boundary(self) -> None:
         text = RELEASE_NOTES.read_text(encoding="utf-8")
