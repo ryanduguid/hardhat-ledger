@@ -70,9 +70,11 @@ class LegalSourceGateTests(unittest.TestCase):
             "https://www.legislation.gov.au/C2004A04402/latest/text",
             "https://www.legislation.gov.au/C2025A00057/latest/text",
             "https://www.legislation.gov.au/C1953A00001/latest/text",
+            "https://www.legislation.gov.au/F2019L00864/latest/text",
             "https://www.legislation.gov.au/F2017L01227/latest/text",
             "https://www.ato.gov.au/law/view/document?docid=TXR/TR20234/NAT/ATO/00001",
             "https://www.ato.gov.au/law/view/document?docid=SGR/SGR20052/NAT/ATO/00001",
+            "https://www.ato.gov.au/law/view/document?docid=PSR/PS201115/NAT/ATO/00001",
             "https://softwaredevelopers.ato.gov.au/TPRS",
         )
         for source in required_sources:
@@ -93,6 +95,78 @@ class LegalSourceGateTests(unittest.TestCase):
         self.assertNotIn("whether payday super has commenced", text)
         self.assertNotIn("The worker carries the onus", text)
 
+    def test_tr_2023_4_title_and_withdrawal_history_are_current(self) -> None:
+        text = skill_text("contractor-super-tpar")
+
+        self.assertIn(
+            "TR 2023/4, *Income tax and superannuation guarantee: "
+            "who is an employee?*",
+            text,
+        )
+        self.assertIn("withdrawn with effect from 26 June 2024", text)
+        self.assertIn("incorporated in Appendix 2 of TR 2023/4", text)
+        self.assertNotIn(
+            "Income tax: pay as you go withholding - who is an employee?",
+            text,
+        )
+
+    def test_post_payday_super_calculation_is_bounded_and_reviewable(self) -> None:
+        text = skill_text("contractor-super-tpar")
+
+        self.assertIn("s 10A(5)", text)
+        self.assertIn("s 10A(6)", text)
+        self.assertIn("maximum contributions base", text)
+        self.assertIn("in relation to this employer", text)
+        self.assertIn("12% charge percentage in s 17A(2)", text)
+        self.assertIn("seventh business day", text)
+        self.assertIn("20th business day", text)
+        self.assertIn("ss 18A and 18B", text)
+        self.assertIn("s 18C(2)-(4)", text)
+        self.assertIn(
+            "It does not calculate the final individual shortfall",
+            text,
+        )
+        self.assertIn(
+            "The SG amount and contribution-period screen is not a final "
+            "obligation or charge calculation",
+            text,
+        )
+
+    def test_tpar_turnover_exemption_stays_scoped_to_items_11_to_14(self) -> None:
+        text = skill_text("contractor-super-tpar")
+
+        self.assertIn("F2019L00864", text)
+        self.assertIn("less than 10%", text)
+        self.assertIn("current GST turnover", text)
+        self.assertIn("projected GST turnover", text)
+        self.assertIn(
+            "transaction must not be described in another s 396-55 table item",
+            text,
+        )
+        self.assertIn("entity must not have chosen to report", text)
+        self.assertIn("Giving a report for the transaction", text)
+        self.assertIn(
+            "does not exempt Division 405 building-and-construction reporting",
+            text,
+        )
+
+    def test_tpar_reporting_clocks_preserve_their_authority(self) -> None:
+        text = skill_text("contractor-super-tpar")
+
+        self.assertIn("default time is the 31st day after the period", text)
+        self.assertIn("by legislative instrument", text)
+        self.assertIn("s 388-55", text)
+        self.assertIn("s 405-10(1)", text)
+        self.assertIn("within 21 days after each quarter", text)
+        self.assertIn("s 405-10(4)", text)
+        self.assertIn("by written notice", text)
+        self.assertIn("PS LA 2011/15", text)
+        self.assertIn("annual TPAR with a 28 August due date", text)
+        self.assertIn(
+            "practice statement itself as the written notice",
+            text,
+        )
+
     def test_source_review_records_scope_and_no_client_data(self) -> None:
         review = (
             REPOSITORY / "docs" / "source-review-2026-08-15.md"
@@ -103,6 +177,11 @@ class LegalSourceGateTests(unittest.TestCase):
         self.assertIn("## NSW security of payment coverage", review)
         self.assertIn("## NSW retention-money trusts", review)
         self.assertIn("## Contractor superannuation and reporting", review)
+        self.assertIn("F2019L00864", review)
+        self.assertIn("maximum contributions base", review)
+        self.assertIn("s 405-10(4)", review)
+        self.assertIn("written notice", review)
+        self.assertIn("26 June 2024", review)
         self.assertIn("No client records, identifiers or credentials were used", review)
 
 
