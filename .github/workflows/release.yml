@@ -61,10 +61,11 @@ jobs:
             echo "Committed release notes are missing: docs/releases/${tag}.md" >&2
             exit 1
           fi
-          if gh api \
+          existing_release_ids="$(gh api --paginate \
             -H "X-GitHub-Api-Version: 2026-03-10" \
-            "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" \
-            >/dev/null 2>&1; then
+            "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+            --jq ".[] | select(.tag_name == \"${tag}\") | .id")"
+          if [[ -n "${existing_release_ids}" ]]; then
             echo "A GitHub release already exists for ${tag}; refusing to replace it." >&2
             exit 1
           fi
@@ -161,9 +162,19 @@ jobs:
             "${sbom}#SPDX 2.3 SBOM" \
             "dist/SHA256SUMS#SHA-256 checksums"
 
+          draft_release_ids="$(gh api --paginate \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+            --jq ".[] | select(.tag_name == \"${tag}\" and .draft == true) | .id")"
+          if [[ ! "${draft_release_ids}" =~ ^[0-9]+$ ]]; then
+            echo "Could not identify exactly one draft release for ${tag}." >&2
+            exit 1
+          fi
+          release_id="${draft_release_ids}"
+
           if [[ "$(gh api \
             -H "X-GitHub-Api-Version: 2026-03-10" \
-            "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" \
+            "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
             --jq '.draft')" != "true" ]]; then
             echo "The release was not created as a draft." >&2
             exit 1
@@ -175,14 +186,18 @@ jobs:
             "subcontractor-accounting-skills-${tag}.zip")"
           actual="$(gh api \
             -H "X-GitHub-Api-Version: 2026-03-10" \
-            "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" \
+            "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
             --jq '.assets[].name' | sort)"
           if [[ "${actual}" != "${expected}" ]]; then
             echo "The draft release does not contain the exact asset set." >&2
             exit 1
           fi
 
-          gh release edit "${tag}" --draft=false
+          gh api --method PATCH \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
+            -F draft=false \
+            >/dev/null
           if [[ "$(gh api \
             -H "X-GitHub-Api-Version: 2026-03-10" \
             "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" \
