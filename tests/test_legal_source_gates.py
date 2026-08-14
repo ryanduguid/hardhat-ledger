@@ -117,11 +117,14 @@ class LegalSourceGateTests(unittest.TestCase):
         self.assertIn("s 10A(6)", text)
         self.assertIn("maximum contributions base", text)
         self.assertIn("in relation to this employer", text)
-        self.assertIn("12% charge percentage in s 17A(2)", text)
+        self.assertIn("Under s 17A(2)", text)
+        self.assertIn("12% charge percentage", text)
         self.assertIn("seventh business day", text)
         self.assertIn("20th business day", text)
         self.assertIn("ss 18A and 18B", text)
-        self.assertIn("s 18C(2)-(4)", text)
+        self.assertIn("s 18C(2)", text)
+        self.assertIn("s 18C(3)", text)
+        self.assertIn("s 18C(4)", text)
         self.assertIn(
             "It does not calculate the final individual shortfall",
             text,
@@ -131,6 +134,41 @@ class LegalSourceGateTests(unittest.TestCase):
             "obligation or charge calculation",
             text,
         )
+
+    def test_post_payday_super_same_day_payments_are_aggregated_after_cap(self) -> None:
+        text = skill_text("contractor-super-tpar")
+
+        self.assertIn("each payment in its actual payment order", text)
+        self.assertIn("two or more payments on the same QE day", text)
+        self.assertIn("sum their s 10A(6)-adjusted amounts", text)
+        self.assertIn("QE-day total once by the 12% charge percentage", text)
+
+    def test_post_payday_super_certificate_sets_nil_only_with_evidence(self) -> None:
+        text = skill_text("contractor-super-tpar")
+
+        self.assertIn("Apply s 17B before returning the amount", text)
+        self.assertIn("treat the QE-day payments as nil", text)
+        self.assertIn("nil individual superannuation guarantee amount", text)
+        self.assertIn("Commissioner-issued certificate", text)
+        self.assertIn("s 17D notice and enclosed copy", text)
+        self.assertIn("specified employer and period", text)
+        self.assertIn("do not infer a certificate", text)
+
+    def test_s18c_longer_period_items_keep_their_distinct_deadlines(self) -> None:
+        text = skill_text("contractor-super-tpar")
+
+        self.assertIn("The standard receipt periods are the **usual period**", text)
+        self.assertIn("12-month period ending on the day before the QE day", text)
+        self.assertIn("do not call them all the extended usual period", text)
+        self.assertIn("Item 1 uses the **extended usual period**", text)
+        self.assertIn("after the employer ceased making", text)
+        self.assertIn("Item 2 applies", text)
+        self.assertIn("first standard QE day after the current QE day", text)
+        self.assertIn("Item 3 applies", text)
+        self.assertIn("starting on the day after the determination is made", text)
+        self.assertIn("Item 4 applies", text)
+        self.assertIn("earlier contribution's latest due day", text)
+        self.assertNotIn("ordinary or applicable extended contribution period", text)
 
     def test_tpar_turnover_exemption_stays_scoped_to_items_11_to_14(self) -> None:
         text = skill_text("contractor-super-tpar")
@@ -163,9 +201,20 @@ class LegalSourceGateTests(unittest.TestCase):
         self.assertIn("PS LA 2011/15", text)
         self.assertIn("annual TPAR with a 28 August due date", text)
         self.assertIn(
-            "practice statement itself as the written notice",
+            "practice statement is not the operative written notice",
             text,
         )
+
+    def test_s388_55_deferral_is_general_and_does_not_replace_405_notice(self) -> None:
+        text = skill_text("contractor-super-tpar")
+
+        self.assertIn("Section 388-55 is a separate general power", text)
+        self.assertIn("can apply to either reporting pathway", text)
+        self.assertIn("paragraph 396-55(a)", text)
+        self.assertIn("s 405-10(2)", text)
+        self.assertIn("s 405-10(4) written notice", text)
+        self.assertIn("plus any s 388-55 deferral", text)
+        self.assertIn("practice statement as a notice or deferral", text)
 
     def test_source_review_records_scope_and_no_client_data(self) -> None:
         review = (
