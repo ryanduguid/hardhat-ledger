@@ -13,6 +13,7 @@ WORKFLOWS = REPOSITORY / ".github" / "workflows"
 RELEASE_WORKFLOW = WORKFLOWS / "release.yml"
 RELEASE_PROCEDURE = REPOSITORY / "RELEASING.md"
 RELEASE_NOTES = REPOSITORY / "docs" / "releases" / "v0.1.1.md"
+DRAFT_RELEASE_FINDER = REPOSITORY / "scripts" / "find_draft_release.py"
 ACTION_REFERENCE = re.compile(r"^\s*uses:\s*([^\s#]+)", re.MULTILINE)
 FULL_SHA_REFERENCE = re.compile(r"^[^@]+@[0-9a-f]{40}$")
 
@@ -79,7 +80,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
     def test_draft_and_exact_assets_are_verified_before_publication(self) -> None:
         text = RELEASE_WORKFLOW.read_text(encoding="utf-8")
         draft_create = text.index('gh release create "${tag}"')
-        draft_lookup = text.index('select(.tag_name == \\"${tag}\\" and .draft == true)')
+        draft_lookup = text.index("python scripts/find_draft_release.py")
         draft_verify = text.index('The release was not created as a draft')
         asset_verify = text.index('The draft release does not contain the exact asset set')
         publish = text.index('"repos/${GITHUB_REPOSITORY}/releases/${release_id}"')
@@ -92,16 +93,22 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertLess(publish, immutable_readback)
         self.assertEqual(text.count('"dist/SHA256SUMS#SHA-256 checksums"'), 1)
 
-    def test_draft_lookup_includes_unpublished_releases(self) -> None:
+    def test_draft_lookup_retries_unpublished_release_inventory(self) -> None:
         text = RELEASE_WORKFLOW.read_text(encoding="utf-8")
-        self.assertGreaterEqual(text.count("releases?per_page=100"), 2)
+        finder = DRAFT_RELEASE_FINDER.read_text(encoding="utf-8")
+        self.assertIn("releases?per_page=100", text)
         self.assertIn('select(.tag_name == \\"${tag}\\")', text)
-        self.assertIn(
-            'select(.tag_name == \\"${tag}\\" and .draft == true)', text
-        )
+        self.assertIn("python scripts/find_draft_release.py", text)
+        self.assertIn('--repo "${GITHUB_REPOSITORY}"', text)
+        self.assertIn('--tag "${tag}"', text)
+        self.assertIn("--attempts 5", text)
+        self.assertIn("--delay-seconds 5", text)
+        self.assertIn("releases?per_page=100", finder)
+        self.assertIn(".id, .tag_name, .draft", finder)
         self.assertIn('"repos/${GITHUB_REPOSITORY}/releases/${release_id}"', text)
         after_create = text.split("gh release create", maxsplit=1)[1]
         before_publish = after_create.split("--method PATCH", maxsplit=1)[0]
+        self.assertNotIn("releases?per_page=100", before_publish)
         self.assertNotIn('releases/tags/${tag}', before_publish)
 
     def test_release_notes_state_the_regulated_human_review_boundary(self) -> None:

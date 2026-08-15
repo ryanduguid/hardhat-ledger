@@ -162,15 +162,11 @@ jobs:
             "${sbom}#SPDX 2.3 SBOM" \
             "dist/SHA256SUMS#SHA-256 checksums"
 
-          draft_release_ids="$(gh api --paginate \
-            -H "X-GitHub-Api-Version: 2026-03-10" \
-            "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
-            --jq ".[] | select(.tag_name == \"${tag}\" and .draft == true) | .id")"
-          if [[ ! "${draft_release_ids}" =~ ^[0-9]+$ ]]; then
-            echo "Could not identify exactly one draft release for ${tag}." >&2
-            exit 1
-          fi
-          release_id="${draft_release_ids}"
+          release_id="$(python scripts/find_draft_release.py \
+            --repo "${GITHUB_REPOSITORY}" \
+            --tag "${tag}" \
+            --attempts 5 \
+            --delay-seconds 5)"
 
           if [[ "$(gh api \
             -H "X-GitHub-Api-Version: 2026-03-10" \
