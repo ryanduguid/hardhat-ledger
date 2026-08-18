@@ -35,9 +35,11 @@ professional judgement starts. Nothing here is tax, accounting or legal advice.
 
 ## Local verification
 
-Python 3.10 or newer, standard library only.
+Python 3.10 or newer. The tests need the packages pinned in
+[requirements-test.txt](requirements-test.txt).
 
 ```bash
+python -m pip install --disable-pip-version-check --no-deps --requirement requirements-test.txt
 python -m unittest discover -s tests -v
 ```
 
