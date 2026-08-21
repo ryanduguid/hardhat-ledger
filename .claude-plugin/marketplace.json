@@ -34,7 +34,7 @@
         "./.claude/skills/retention-schedule",
         "./.claude/skills/wip-over-under-billing"
       ],
-      "homepage": "https://github.com/ryanduguid/subcontractor-accounting-skills",
+      "homepage": "https://github.com/ryanduguid/hardhat-ledger",
       "license": "MIT"
     }
   ]

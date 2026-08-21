@@ -1,10 +1,14 @@
-# subcontractor-accounting-skills
+# Hardhat Ledger
 
-[![Verify](https://github.com/ryanduguid/subcontractor-accounting-skills/actions/workflows/verify.yml/badge.svg)](https://github.com/ryanduguid/subcontractor-accounting-skills/actions/workflows/verify.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Verify](https://github.com/ryanduguid/hardhat-ledger/actions/workflows/verify.yml/badge.svg)](https://github.com/ryanduguid/hardhat-ledger/actions/workflows/verify.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 Claude Code skills for Australian subcontractor accounting: progress claims,
 retentions, work in progress and over/under-billing, contract cost tracking, and
 the regimes a mining-services or earthmoving subcontractor lives with.
+
+Compatibility: the Claude plugin remains `subcontractor-accounting-skills` in
+the `ryanduguid-contracting` marketplace, and release asset filenames retain
+that identifier.
 
 Written independently, from scratch, in my own time and on my own equipment.
 Each skill encodes the *workflow* - the steps, the tie-outs, the exceptions to
@@ -32,14 +36,14 @@ This repo is also a Claude Code plugin marketplace, so the skills install
 together and update with the repo:
 
 ```
-/plugin marketplace add ryanduguid/subcontractor-accounting-skills
+/plugin marketplace add ryanduguid/hardhat-ledger
 /plugin install subcontractor-accounting-skills@ryanduguid-contracting
 ```
 
 ### Any agent, via the skills CLI
 
 ```bash
-npx skills add ryanduguid/subcontractor-accounting-skills
+npx skills add ryanduguid/hardhat-ledger
 ```
 
 Add `-g` to install into `~/.claude/skills` instead, `-a claude-code` to target
@@ -48,17 +52,17 @@ one agent, and `-l` to list the skills without installing anything.
 ### By hand
 
 ```bash
-git clone https://github.com/ryanduguid/subcontractor-accounting-skills
+git clone https://github.com/ryanduguid/hardhat-ledger
 mkdir -p ~/.claude/skills
-cp -r subcontractor-accounting-skills/.claude/skills/* ~/.claude/skills/
+cp -r hardhat-ledger/.claude/skills/* ~/.claude/skills/
 ```
 
 PowerShell:
 
 ```powershell
-git clone https://github.com/ryanduguid/subcontractor-accounting-skills
+git clone https://github.com/ryanduguid/hardhat-ledger
 New-Item -ItemType Directory -Force "$HOME/.claude/skills"
-Copy-Item -Recurse subcontractor-accounting-skills/.claude/skills/* "$HOME/.claude/skills/"
+Copy-Item -Recurse hardhat-ledger/.claude/skills/* "$HOME/.claude/skills/"
 ```
 
 ## Skills
