@@ -1,0 +1,50 @@
+{
+  "name": "subcontractor-accounting-skills",
+  "version": "0.1.1",
+  "license": "MIT",
+  "repository": "https://github.com/ryanduguid/hardhat-ledger",
+  "homepage": "https://github.com/ryanduguid/hardhat-ledger",
+  "author": {
+    "name": "Ryan Duguid"
+  },
+  "description": "Australian construction and mining subcontractor workflows: progress claims, retentions, WIP and over/under-billing, contract cost tracking, fuel tax credits, Coal LSL, payroll tax contractor provisions, contractor super and TPAR. Prep-only. Not lodgment. Not tax advice.",
+  "skills": "./.claude/skills/",
+  "keywords": [
+    "australian tax",
+    "accounting",
+    "construction",
+    "mining",
+    "contracting",
+    "progress claims",
+    "retentions",
+    "fuel tax credits",
+    "payroll tax",
+    "coal lsl",
+    "tpar",
+    "codex",
+    "claude code",
+    "agent skills"
+  ],
+  "safety": {
+    "humanReviewRequired": true,
+    "noLodgment": true,
+    "noLodgmentBoundary": "Never lodge, file, submit, transmit, declare, pay, or finalise any tax return, BAS, TPAR, payroll tax return, fuel tax credit claim, Coal LSL return, or other material with the ATO, a state revenue office, or any other government agency.",
+    "preserveReviewFlags": true
+  },
+  "interface": {
+    "displayName": "Subcontractor accounting skills",
+    "developerName": "Ryan Duguid",
+    "shortDescription": "Progress claims, retentions, WIP, fuel tax credits and contractor payroll tax",
+    "longDescription": "Ten workflow skills for Australian construction and mining subcontractor accounting. Each skill encodes the process and the tie-outs, and sends the agent to the primary source for the rates, thresholds and statutory timeframes that change. Outputs are review-ready workpapers. An authorised human reviews, decides and lodges. Not tax advice. Not affiliated with or endorsed by the Australian Taxation Office, any state revenue office, or Coal LSL.",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Prepare progress claim 7 for this contract from the cost ledger and the schedule of rates. Show the retention held to date against the contract cap and list anything that does not tie."
+    ],
+    "websiteURL": "https://github.com/ryanduguid/hardhat-ledger",
+    "privacyPolicyURL": "https://github.com/ryanduguid/hardhat-ledger/blob/main/SECURITY.md"
+  }
+}
