@@ -41,7 +41,7 @@ releases** in Settings > General > Releases, or make the equivalent API call:
 ```powershell
 gh api --method PUT `
   -H "X-GitHub-Api-Version: 2026-03-10" `
-  repos/ryanduguid/subcontractor-accounting-skills/immutable-releases
+  repos/ryanduguid/hardhat-ledger/immutable-releases
 ```
 
 Read the setting back with the same administrator identity:
@@ -49,7 +49,7 @@ Read the setting back with the same administrator identity:
 ```powershell
 gh api `
   -H "X-GitHub-Api-Version: 2026-03-10" `
-  repos/ryanduguid/subcontractor-accounting-skills/immutable-releases `
+  repos/ryanduguid/hardhat-ledger/immutable-releases `
   --jq '{enabled, enforced_by_owner}'
 ```
 
@@ -70,9 +70,9 @@ tag at that exact SHA. For `v0.1.1`:
 ```powershell
 git fetch origin main --tags
 $releaseSha = git rev-parse origin/main
-$apiMainSha = gh api repos/ryanduguid/subcontractor-accounting-skills/git/ref/heads/main --jq '.object.sha'
+$apiMainSha = gh api repos/ryanduguid/hardhat-ledger/git/ref/heads/main --jq '.object.sha'
 if ($releaseSha -ne $apiMainSha) { throw "origin/main does not match the GitHub API" }
-gh api repos/ryanduguid/subcontractor-accounting-skills/commits/$releaseSha/check-runs --jq '.check_runs[] | [.name, .status, .conclusion] | @tsv'
+gh api repos/ryanduguid/hardhat-ledger/commits/$releaseSha/check-runs --jq '.check_runs[] | [.name, .status, .conclusion] | @tsv'
 git tag -a v0.1.1 $releaseSha -m "v0.1.1"
 git cat-file -t refs/tags/v0.1.1
 $tagSha = git rev-parse 'refs/tags/v0.1.1^{commit}'
@@ -105,11 +105,11 @@ Get-FileHash -Algorithm SHA256 subcontractor-accounting-skills-v0.1.1.zip
 Get-FileHash -Algorithm SHA256 subcontractor-accounting-skills-v0.1.1.tar.gz
 Get-FileHash -Algorithm SHA256 subcontractor-accounting-skills-v0.1.1.spdx.json
 Pop-Location
-gh attestation verify dist-verify/subcontractor-accounting-skills-v0.1.1.zip --repo ryanduguid/subcontractor-accounting-skills
-gh attestation verify dist-verify/subcontractor-accounting-skills-v0.1.1.tar.gz --repo ryanduguid/subcontractor-accounting-skills
-gh attestation verify dist-verify/subcontractor-accounting-skills-v0.1.1.zip --repo ryanduguid/subcontractor-accounting-skills --predicate-type https://spdx.dev/Document/v2.3
-gh release verify v0.1.1 --repo ryanduguid/subcontractor-accounting-skills
-gh api -H "X-GitHub-Api-Version: 2026-03-10" repos/ryanduguid/subcontractor-accounting-skills/releases/tags/v0.1.1 --jq '{draft, immutable}'
+gh attestation verify dist-verify/subcontractor-accounting-skills-v0.1.1.zip --repo ryanduguid/hardhat-ledger
+gh attestation verify dist-verify/subcontractor-accounting-skills-v0.1.1.tar.gz --repo ryanduguid/hardhat-ledger
+gh attestation verify dist-verify/subcontractor-accounting-skills-v0.1.1.zip --repo ryanduguid/hardhat-ledger --predicate-type https://spdx.dev/Document/v2.3
+gh release verify v0.1.1 --repo ryanduguid/hardhat-ledger
+gh api -H "X-GitHub-Api-Version: 2026-03-10" repos/ryanduguid/hardhat-ledger/releases/tags/v0.1.1 --jq '{draft, immutable}'
 ```
 
 Compare the three calculated hashes with `SHA256SUMS`. Stop and investigate any
