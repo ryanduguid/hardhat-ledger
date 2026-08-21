@@ -53,10 +53,13 @@ dist/
 !SECURITY.md
 !CONTRIBUTING.md
 !RELEASING.md
+!DISCLAIMER.md
 !.claude/skills/**/*.md
+!.claude/rules/**/*.md
 !templates/**/*.example
 !docs/**/*.md
 !AGENTS.md
+!validation/**/*.md
 
 # Client-named data files (scoped to data extensions so docs and skills named
 # "client-*" are never silently swallowed). Keep these below any sample

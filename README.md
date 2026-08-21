@@ -138,7 +138,12 @@ Python 3.10 or newer. The tests need the packages pinned in
 ```bash
 python -m pip install --disable-pip-version-check --no-deps --requirement requirements-test.txt
 python -m unittest discover -s tests -v
+python scripts/validate_validation.py
 ```
+
+The fabricated cards in `validation/` and the shared rule in
+`.claude/rules/accounting-safety.md` are the MaryAddisonHamilton-style gates
+for this pack. See [DISCLAIMER.md](DISCLAIMER.md).
 
 ## Contributing
 
