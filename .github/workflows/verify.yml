@@ -12,7 +12,6 @@ permissions:
 
 jobs:
   verify:
-    timeout-minutes: 15
     name: verify
     runs-on: ubuntu-latest
     steps:
@@ -31,6 +30,9 @@ jobs:
 
       - name: Verify skill metadata
         run: python -m unittest discover -s tests -v
+
+      - name: Verify fabricated validation pack
+        run: python scripts/validate_validation.py
 
       - name: Verify Skills CLI discovery
         run: python tests/verify_skills_cli.py
