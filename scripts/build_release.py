@@ -26,7 +26,7 @@ from pathlib import Path, PurePosixPath
 from typing import Iterable, Sequence
 
 
-REPOSITORY_SLUG = "ryanduguid/subcontractor-accounting-skills"
+REPOSITORY_SLUG = "ryanduguid/hardhat-ledger"
 PRODUCT_NAME = "subcontractor-accounting-skills"
 EXPECTED_SKILL_COUNT = 10
 FROZEN_VERSION = "v0.1.0"
