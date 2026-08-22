@@ -1,6 +1,6 @@
 # Hardhat Ledger
 
-[![Verify](https://github.com/ryanduguid/hardhat-ledger/actions/workflows/verify.yml/badge.svg)](https://github.com/ryanduguid/hardhat-ledger/actions/workflows/verify.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Verify](https://github.com/ryanduguid/hardhat-ledger/actions/workflows/verify.yml/badge.svg)](https://github.com/ryanduguid/hardhat-ledger/actions/workflows/verify.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-4F485E.svg?labelColor=04001F)](LICENSE)
 
 Claude Code skills for Australian subcontractor accounting: progress claims,
 retentions, work in progress and over/under-billing, contract cost tracking, and
