@@ -142,7 +142,7 @@ python scripts/validate_validation.py
 ```
 
 The fabricated cards in `validation/` and the shared rule in
-`.claude/rules/accounting-safety.md` are the MaryAddisonHamilton-style gates
+`.claude/rules/accounting-safety.md` are the australian-accounting-skills-style gates
 for this pack. See [DISCLAIMER.md](DISCLAIMER.md).
 
 ## Contributing
