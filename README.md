@@ -1,5 +1,19 @@
 # Hardhat Ledger
 
+```
++----------------------------------------------------------------------+
+|                            hardhat-ledger                            |
++----------------------------------------------------------------------+
+|           Claude Code skills for AU subcontractor ledgers            |
++----------------------------------+-----------------------------------+
+| DR  what it gives you            | CR  what it needs                 |
++----------------------------------+-----------------------------------+
+| progress claim schedules         | a job or tracking dimension       |
+| retention ledger tracking        | standard CSV ledger exports       |
+| flags legal calls for review     | -                                 |
++----------------------------------+-----------------------------------+
+```
+
 [![Verify](https://github.com/ryanduguid/hardhat-ledger/actions/workflows/verify.yml/badge.svg)](https://github.com/ryanduguid/hardhat-ledger/actions/workflows/verify.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-4F485E.svg?labelColor=04001F)](LICENSE)
 
 Claude Code skills for Australian subcontractor accounting: progress claims,
