@@ -28,6 +28,7 @@ EXPECTED_CASE_NAMES = {
     "payroll-tax-contractor-characterisation.md",
     "progress-claim-missing-reference-date.md",
     "retention-release-missing-deed.md",
+    "standalone-skill-safety-boundary.md",
     "wip-cost-to-complete-gap.md",
 }
 EXPECTED_VALIDATION = {
@@ -368,7 +369,7 @@ def main() -> int:
     except ValidationError as error:
         errors.append(str(error))
 
-    skill_root = ROOT / ".claude" / "skills"
+    skill_root = ROOT / "plugins" / "subcontractor-accounting-skills" / "skills"
     try:
         for directory in skill_root.iterdir():
             if directory.is_dir() and not is_reparse_point(directory):

@@ -1,6 +1,6 @@
 # Fabricated regression validation
 
-The eight cards in `cases/` test workflow quality, provenance and restraint.
+The nine cards in `cases/` test workflow quality, provenance and restraint.
 They are fabricated Markdown scenarios, not de-identified client examples. No
 real or realistic client name, individual, contact detail, ABN, TFN, bank
 detail, credential, ledger export or derived client data belongs here.
@@ -49,6 +49,7 @@ law claim, unverified source or guess.
 | [Coal LSL levy unverified rate](cases/coal-lsl-levy-unverified-rate.md) | coal-lsl-levy |
 | [Payroll-tax contractor characterisation](cases/payroll-tax-contractor-characterisation.md) | payroll-tax-contractors, contractor-super-tpar |
 | [Export manifest and rounding](cases/export-manifest-rounding.md) | contracting-exports |
+| [Standalone skill safety boundary](cases/standalone-skill-safety-boundary.md) | all ten skills installed independently |
 
 Together the cards cover all ten distributable skills.
 

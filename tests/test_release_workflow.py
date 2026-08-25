@@ -3,6 +3,8 @@
 from pathlib import Path
 import unittest
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -19,6 +21,31 @@ class ReleaseWorkflowTests(unittest.TestCase):
             workflow,
         )
         self.assertIn("artifact-stem: subcontractor-accounting-skills", workflow)
+
+    def test_privileged_release_job_delegates_without_local_steps(self) -> None:
+        workflow = yaml.load(
+            (ROOT / ".github" / "workflows" / "release.yml").read_text(
+                encoding="utf-8"
+            ),
+            Loader=yaml.BaseLoader,
+        )
+        release = workflow["jobs"]["release"]
+
+        self.assertNotIn("steps", release)
+        self.assertNotIn("env", release)
+        self.assertEqual(
+            release["uses"],
+            "ryanduguid/release-policy/.github/workflows/release-archive.yml@"
+            "47480b782926179b621ec1c6643ef88c80fc8fd4",
+        )
+        self.assertEqual(
+            release["permissions"],
+            {
+                "attestations": "write",
+                "contents": "write",
+                "id-token": "write",
+            },
+        )
 
 
 if __name__ == "__main__":

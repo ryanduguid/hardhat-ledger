@@ -175,7 +175,14 @@ class DecodeAndPathTests(unittest.TestCase):
 
 class SafetyControlTests(unittest.TestCase):
     def test_every_skill_keeps_untrusted_content_boundary(self) -> None:
-        skill_files = sorted((REPOSITORY / ".claude" / "skills").glob("*/SKILL.md"))
+        skill_files = sorted(
+            (
+                REPOSITORY
+                / "plugins"
+                / "subcontractor-accounting-skills"
+                / "skills"
+            ).glob("*/SKILL.md")
+        )
         self.assertGreaterEqual(len(skill_files), 10)
         for path in skill_files:
             with self.subTest(skill=path.parent.name):
@@ -198,6 +205,12 @@ class SafetyControlTests(unittest.TestCase):
         ):
             with self.subTest(boundary=boundary):
                 self.assertIn(boundary, text)
+
+        normalised = text.replace("\n   ", " ")
+        self.assertIn(
+            "If no firm-approved secure location is configured, stop and ask",
+            normalised,
+        )
 
     def test_disclaimer_keeps_the_advice_and_lodgment_boundary(self) -> None:
         text = (REPOSITORY / "DISCLAIMER.md").read_text(encoding="utf-8")

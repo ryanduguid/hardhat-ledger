@@ -1,21 +1,15 @@
-# v0.1.3
+# v0.1.4
 
-`v0.1.3` republishes the current source as a new release. It does not move,
-replace or add assets to the historical `v0.1.0` and `v0.1.1` tags or
-releases, nor to `v0.1.2`: that tag was pushed when main had already advanced
-past it, so the release workflow's tag-matches-main gate correctly refused to
-publish, and GitHub's tag-protection rule blocks deleting or moving it.
+`v0.1.4` repairs cross-runtime packaging and makes the safety boundary portable when a skill is installed by itself. It retains the `subcontractor-accounting-skills` plugin name and all ten skill names.
 
-## Changes since v0.1.1
+## Changes since v0.1.3
 
-- Package the skills for Codex and agent marketplaces and add `AGENTS.md`;
-- state the s 32(2) payroll-tax exemptions per contract in the
-  `payroll-tax-contractors` skill;
-- correct the standard-library-only verification claim in the documentation;
-- discover draft releases by ID and retry delayed draft discovery in the release
-  workflow;
-- scope release workflow permissions and pace Dependabot updates; and
-- ignore local sign-in files.
+- use one canonical nested plugin payload for Claude and Codex;
+- point both marketplace listings to that payload and give the Claude manifest sole ownership of its skill components;
+- remove unsupported Codex manifest fields and the incorrect privacy-policy link to `SECURITY.md`;
+- embed current-source, client-data, secure-output, consequential-action and professional-judgement controls in every skill;
+- remove unsafe or dangling instructions for Coal LSL, payroll-tax output, BAS hand-off and the WIP schedule engine; and
+- delegate releases to a full-commit-pinned shared policy that isolates consumer tests from release authority.
 
 ## Included skills
 
@@ -60,3 +54,5 @@ endings and whose timestamps derive from the tagged commit in UTC, plus:
 
 Follow [the release procedure](RELEASING.md) to verify the checksums,
 attestations, exact tag target and immutable-release status.
+
+The repository remains supported in this release. A gated transition to a broader Australian accounting skill pack is documented in [the consolidation plan](docs/consolidation-transition.md).

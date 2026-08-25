@@ -43,6 +43,14 @@ Build a per-machine owning-and-operating rate and a defensible treatment note fo
 - Finance treatment agrees with the contract type and its date, and the GST credit timing matches that treatment and the entity's GST accounting basis
 - Every statutory rate, threshold or write-off figure, and every treatment stated under Div 40, Div 240, Subdiv 328-D, the GST Act or a payroll tax Act, names the provision or page read and the date checked
 
+## Portable safety boundary
+
+- Current mutable facts must come from a current authoritative primary source; if the source is unavailable, leave the fact blank or explicitly unverified and do not rely on it.
+- Real client data must stay in a firm-approved environment, outside repositories and unapproved cloud prompts, with unnecessary identifiers excluded.
+- Write client output only to a configured firm-approved secure path; if none is supplied, stop and ask, create no fallback, and do not edit `.gitignore`.
+- Do not lodge, make declarations, communicate with a client or regulator, pay, post journals or lock records; prepare the hand-off for an authorised human.
+- Legal, tax and accounting judgement belongs to the authorised reviewer, partner, lawyer or registered agent.
+
 ## Boundaries
 
 - Never state an effective life, decline in value rate, write-off threshold, pool rate, payroll tax rate or threshold, or levy rate from memory. Look it up in the relevant legislative instrument, Act or revenue office page, cite it, and record the date checked. If the source is unreachable from this session, do not supply the figure: leave the workpaper line open, say which source could not be reached, and ask the user to confirm it.

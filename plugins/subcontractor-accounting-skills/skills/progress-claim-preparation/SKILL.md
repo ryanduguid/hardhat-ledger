@@ -44,6 +44,14 @@ Ask for these if not provided:
 - The GST base and the before or after retention ordering are stated on the workpaper, and the claim total agrees to the tax invoice issued
 - Statutory content present for the named state, claim window open, service method and date recorded, response clocks diarised
 
+## Portable safety boundary
+
+- Current mutable facts must come from a current authoritative primary source; if the source is unavailable, leave the fact blank or explicitly unverified and do not rely on it.
+- Real client data must stay in a firm-approved environment, outside repositories and unapproved cloud prompts, with unnecessary identifiers excluded.
+- Write client output only to a configured firm-approved secure path; if none is supplied, stop and ask, create no fallback, and do not edit `.gitignore`.
+- Do not lodge, make declarations, communicate with a client or regulator, pay, post journals or lock records; prepare the hand-off for an authorised human.
+- Legal, tax and accounting judgement belongs to the authorised reviewer, partner, lawyer or registered agent.
+
 ## Boundaries
 
 - Never state a number of days, a monetary trust trigger, a threshold, a penalty or a rate from memory. Cite the Act section or regulator page read and the date read; if the source cannot be reached, record the figure as unverified and flag it on the claim workpaper.

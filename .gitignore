@@ -37,11 +37,9 @@ dist/
 *.md
 # *.json must not swallow config that has to ship. Keep these trackable and
 # nothing wider: settings.local.json and any MCP or token JSON stay out.
-!.claude/skills/**/*.json
 !.claude-plugin/marketplace.json
-!.claude-plugin/plugin.json
-!/.codex-plugin/
-!/.codex-plugin/**/*.json
+!plugins/subcontractor-accounting-skills/.claude-plugin/**/*.json
+!plugins/subcontractor-accounting-skills/.codex-plugin/**/*.json
 !/.agents/
 !/.agents/plugins/
 !/.agents/plugins/**/*.json
@@ -54,7 +52,7 @@ dist/
 !CONTRIBUTING.md
 !RELEASING.md
 !DISCLAIMER.md
-!.claude/skills/**/*.md
+!plugins/subcontractor-accounting-skills/skills/**/*.md
 !.claude/rules/**/*.md
 !templates/**/*.example
 !docs/**/*.md

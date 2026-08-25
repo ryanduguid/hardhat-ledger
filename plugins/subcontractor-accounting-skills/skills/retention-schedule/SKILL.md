@@ -42,6 +42,14 @@ Build a per-contract retention schedule that carries every amount from withholdi
 - Classification per contract (receivable or contract asset, current or non-current) is documented with the AASB paragraph relied on
 - Every failed test above is on the exceptions list, naming the contract, the rule, the source consulted and the date checked
 
+## Portable safety boundary
+
+- Current mutable facts must come from a current authoritative primary source; if the source is unavailable, leave the fact blank or explicitly unverified and do not rely on it.
+- Real client data must stay in a firm-approved environment, outside repositories and unapproved cloud prompts, with unnecessary identifiers excluded.
+- Write client output only to a configured firm-approved secure path; if none is supplied, stop and ask, create no fallback, and do not edit `.gitignore`.
+- Do not lodge, make declarations, communicate with a client or regulator, pay, post journals or lock records; prepare the hand-off for an authorised human.
+- Legal, tax and accounting judgement belongs to the authorised reviewer, partner, lawyer or registered agent.
+
 ## Boundaries
 
 - Never state a retention percentage, cap, trust threshold, penalty, notice period or contract-price threshold from memory. Read caps at the QBCC Act, trust triggers at BIF ch 2, and NSW obligations at the Act and the Regulation in force, recording the source and date checked. QBCC trustee guides are stale on mandatory training and the closing account review, which QBCC reports were removed by the 2024 amendments, so confirm those against the amending Act.
