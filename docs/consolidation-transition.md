@@ -1,6 +1,6 @@
 # Consolidation transition
 
-This repository remains the compatible source for the ten published `subcontractor-accounting-skills` entrypoints through the `v0.1.4` repair release. The proposed next home is a broader `ryanduguid/australian-accounting-skills` pack. That destination is a plan, not a current installation claim.
+This repository remains the compatible source for the ten published `subcontractor-accounting-skills` entrypoints through the `v0.1.5` recovery release. The proposed next home is a broader `ryanduguid/australian-accounting-skills` pack. That destination is a plan, not a current installation claim.
 
 ## Compatibility contract
 
@@ -10,7 +10,7 @@ Installing both packs at once would create duplicate skill names. The migration 
 
 ## Phases and gates
 
-1. **Repair here.** Publish `v0.1.4` only after the local manifest, Claude installation, Codex validation, Skills CLI discovery, unit-test and standalone-safety checks pass. Keep this repository active and do not mark it deprecated in the repair release.
+1. **Repair here.** Publish `v0.1.5` only after the local manifest, Claude installation, Codex validation, Skills CLI discovery, unit-test and standalone-safety checks pass. Keep this repository active and do not mark it deprecated in the recovery release.
 2. **Copy into the broader pack.** Bring the ten skill directories across without changing their names or weakening their boundaries. Record the source commit and compare a file inventory or content hashes so the destination can prove what changed during integration.
 3. **Validate the destination.** Require exact discovery of all ten skills through the destination's supported Claude, Codex and Skills CLI paths. Re-run every fabricated card in `validation/`, including the standalone safety card, and review any destination-specific cross-references.
 4. **Announce the replacement.** After the destination release is available and verified, prepare a separate deprecation release here. Change installation guidance to the replacement pack, explain the duplicate-name constraint and retain a rollback link to the last compatible release.
