@@ -87,7 +87,7 @@ Copy-Item -Recurse hardhat-ledger/.claude/skills/* "$HOME/.claude/skills/"
 |---|---|
 | `progress-claim-preparation` | Build or review a payment claim: measured work, variations, materials, retention withheld, GST, reference dates |
 | `retention-schedule` | Retentions withheld and released by contract, defects liability expiry, trust obligations, tie-out to the ledger |
-| `wip-over-under-billing` | Contract assets and liabilities under AASB 15: cost to complete, progress measurement, over and under-billing |
+| `wip-over-under-billing` | Contract assets and liabilities under AASB 15. The skill is the workflow; [TheWIPTally](https://github.com/ryanduguid/TheWIPTally) does the arithmetic |
 | `contract-cost-tracking` | Job costing: committed against actual cost, labour and plant allocation, margin and budget variance |
 
 ### Mining services and earthmoving
@@ -107,6 +107,14 @@ Copy-Item -Recurse hardhat-ledger/.claude/skills/* "$HOME/.claude/skills/"
 | `contracting-exports` | The exports these workflows need and their parsing quirks. Reference skill for the others |
 
 The skills cross-reference each other, so installing the full set works best.
+
+## Sibling command-line tool
+
+`wip-over-under-billing` names [TheWIPTally](https://github.com/ryanduguid/TheWIPTally)
+(`wip-tally schedule`) rather than asking the agent to invent cost-to-cost
+arithmetic. The skill still owns unit of account, the over-time versus
+point-in-time test, and engagement-lead conclusions. Review aid, not a
+determination.
 
 ## Scope
 
