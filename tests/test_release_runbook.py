@@ -59,6 +59,11 @@ if ($postApprovalReleaseExit -eq 0 -or "$postApprovalReleaseError" -notmatch 'HT
     throw "post-approval release absence was not proved"
 }"""
 
+POST_APPROVAL_TAG_ABSENCE_GATE = """$postApprovalTag = git ls-remote --tags origin "refs/tags/$releaseTag"
+if ($postApprovalTag) {
+    throw "candidate tag appeared after approval"
+}"""
+
 NOTE_NORMALISER = """function ConvertTo-Lf([string]$Text) {
     return $Text.Replace("`r`n", "`n")
 }"""
@@ -68,6 +73,11 @@ CHECK_RUN_GATE = """if (
         $matchingChecks[0].status -cne "completed" -or
         $matchingChecks[0].conclusion -cne "success"
     ) {"""
+
+SIGNER_WORKFLOW_ASSIGNMENT = (
+    '$signerWorkflow = "ryanduguid/release-policy/.github/workflows/'
+    'publish-archives.yml"'
+)
 
 PROVENANCE_COMMANDS = (
     'gh attestation verify $checksumPath --repo $repo --source-digest $approvedSha --source-ref "refs/tags/$releaseTag" --signer-workflow $signerWorkflow --signer-digest $expectedPolicySha',
@@ -177,7 +187,14 @@ def assert_runbook_contract(testcase: unittest.TestCase, text: str) -> None:
     post_approval_gate = text.index("$postApprovalImmutableReleaseState")
     tag_create = text.index("git tag -a $releaseTag")
     tag_push = text.index('git push origin "refs/tags/$releaseTag"')
+    post_approval_block = text[approval:tag_create]
+    testcase.assertEqual(text.count("git fetch origin main --tags"), 2)
+    testcase.assertEqual(post_approval_block.count("git fetch origin main --tags"), 1)
+    post_approval_fetch = text.index("git fetch origin main --tags", approval)
     testcase.assertLess(approval, post_approval_gate)
+    testcase.assertLess(approval, post_approval_fetch)
+    testcase.assertLess(post_approval_fetch, post_approval_gate)
+    testcase.assertIn(POST_APPROVAL_TAG_ABSENCE_GATE, post_approval_block)
     post_approval_markers = (
         "$postApprovalImmutableReleaseState",
         "$postApprovalOriginMainSha = git rev-parse origin/main",
@@ -224,11 +241,8 @@ def assert_runbook_contract(testcase: unittest.TestCase, text: str) -> None:
         'if (-not ($checksumLines -ccontains "$payloadDigest  $payloadName"))',
         text,
     )
-    testcase.assertIn(
-        '$signerWorkflow = "ryanduguid/release-policy/.github/workflows/'
-        'publish-archives.yml"',
-        text,
-    )
+    testcase.assertEqual(len(re.findall(r"\$signerWorkflow\s*=", text)), 1)
+    testcase.assertEqual(text.count(SIGNER_WORKFLOW_ASSIGNMENT), 1)
 
     attestation_lines = [
         line.strip()
@@ -428,6 +442,43 @@ class ReleaseRunbookTests(unittest.TestCase):
         )
         with self.assertRaises(AssertionError):
             assert_runbook_contract(self, moved_probe)
+
+    def test_runbook_contract_rejects_effective_assignment_mutations(self) -> None:
+        text = RUNBOOK.read_text(encoding="utf-8")
+        assert_runbook_contract(self, text)
+
+        first_attestation = "    " + PROVENANCE_COMMANDS[0]
+        self.assertIn(first_attestation, text)
+        unsafe_signer_reassignment = text.replace(
+            first_attestation,
+            '    $signerWorkflow = "unsafe/example.yml"\n' + first_attestation,
+            1,
+        )
+
+        approval = text.index("$confirmedApprovedSha -cne $approvedSha")
+        pre_approval = text[:approval]
+        post_approval = text[approval:]
+        self.assertIn("git fetch origin main --tags\n", post_approval)
+        missing_post_approval_fetch = pre_approval + post_approval.replace(
+            "git fetch origin main --tags\n", "", 1
+        )
+
+        self.assertIn("if ($postApprovalTag) {", text)
+        inverted_candidate_tag_predicate = text.replace(
+            "if ($postApprovalTag) {", "if (-not $postApprovalTag) {", 1
+        )
+
+        mutations = {
+            "effective signer is reassigned": unsafe_signer_reassignment,
+            "post-approval fetch is removed": missing_post_approval_fetch,
+            "candidate tag absence predicate is inverted": (
+                inverted_candidate_tag_predicate
+            ),
+        }
+        for name, mutated in mutations.items():
+            with self.subTest(mutation=name):
+                with self.assertRaises(AssertionError):
+                    assert_runbook_contract(self, mutated)
 
     @unittest.skipUnless(POWERSHELL, "PowerShell 7 is required to test note normalisation")
     def test_note_normaliser_only_collapses_crlf(self) -> None:
