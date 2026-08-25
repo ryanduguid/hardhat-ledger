@@ -233,6 +233,14 @@ class LegalSourceGateTests(unittest.TestCase):
         self.assertIn("26 June 2024", review)
         self.assertIn("No client records, identifiers or credentials were used", review)
 
+    def test_wip_skill_names_the_wip_tally_engine(self) -> None:
+        text = skill_text("wip-over-under-billing")
+
+        self.assertIn("https://github.com/ryanduguid/TheWIPTally", text)
+        self.assertIn("wip-tally schedule", text)
+        self.assertIn("Do not invent WIP arithmetic", text)
+        self.assertIn("Do not invent the cost-to-cost ratio", text)
+
 
 if __name__ == "__main__":
     unittest.main()
