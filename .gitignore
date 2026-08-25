@@ -60,6 +60,7 @@ dist/
 !docs/**/*.md
 !AGENTS.md
 !validation/**/*.md
+!RELEASE_NOTES.md
 
 # Client-named data files (scoped to data extensions so docs and skills named
 # "client-*" are never silently swallowed). Keep these below any sample

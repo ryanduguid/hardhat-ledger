@@ -1,0 +1,62 @@
+# v0.1.3
+
+`v0.1.3` republishes the current source as a new release. It does not move,
+replace or add assets to the historical `v0.1.0` and `v0.1.1` tags or
+releases, nor to `v0.1.2`: that tag was pushed when main had already advanced
+past it, so the release workflow's tag-matches-main gate correctly refused to
+publish, and GitHub's tag-protection rule blocks deleting or moving it.
+
+## Changes since v0.1.1
+
+- Package the skills for Codex and agent marketplaces and add `AGENTS.md`;
+- state the s 32(2) payroll-tax exemptions per contract in the
+  `payroll-tax-contractors` skill;
+- correct the standard-library-only verification claim in the documentation;
+- discover draft releases by ID and retry delayed draft discovery in the release
+  workflow;
+- scope release workflow permissions and pace Dependabot updates; and
+- ignore local sign-in files.
+
+## Included skills
+
+The source archives and marketplace metadata contain all 10 discoverable skills:
+
+- `coal-lsl-levy`
+- `contract-cost-tracking`
+- `contracting-exports`
+- `contractor-super-tpar`
+- `fuel-tax-credits`
+- `payroll-tax-contractors`
+- `plant-and-equipment-costing`
+- `progress-claim-preparation`
+- `retention-schedule`
+- `wip-over-under-billing`
+
+The marketplace intentionally has no pinned plugin version, so installation and
+updates follow the selected repository revision instead of stale metadata.
+
+## Scope and review boundary
+
+These are review-schedule skills. They help collect evidence, structure checks,
+record exceptions and prepare work for review. Every use requires a fresh check
+of the current primary sources and qualified human review, including registered
+tax-agent, accounting or legal review where the matter requires it.
+
+In particular, `contractor-super-tpar` is **not an SG calculator or a TPAR
+calculator**. No skill gives final tax, superannuation, payroll, accounting or
+legal advice, decides employee or statutory coverage, calculates a final SGC or
+reporting obligation, lodges a report, serves a claim, moves trust money or
+authorises a payment.
+
+## Integrity material
+
+The release contains deterministic source archives whose text uses LF line
+endings and whose timestamps derive from the tagged commit in UTC, plus:
+
+- `SHA256SUMS` for both archives and the SBOM;
+- an SPDX 2.3 source SBOM;
+- GitHub build-provenance attestations for every release asset; and
+- GitHub SPDX SBOM attestations for both source archives.
+
+Follow [the release procedure](RELEASING.md) to verify the checksums,
+attestations, exact tag target and immutable-release status.
