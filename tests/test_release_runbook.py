@@ -73,7 +73,6 @@ $sources = @([Console]::In.ReadToEnd() | ConvertFrom-Json)
 $assignments = [Collections.Generic.List[object]]::new()
 $commands = [Collections.Generic.List[object]]::new()
 $conditions = [Collections.Generic.List[object]]::new()
-$setVariableTargets = [Collections.Generic.List[object]]::new()
 
 for ($fence = 0; $fence -lt $sources.Count; $fence++) {
     $tokens = $null
@@ -100,6 +99,11 @@ for ($fence = 0; $fence -lt $sources.Count; $fence++) {
             text = $node.Extent.Text
             start = $node.Extent.StartOffset
             end = $node.Extent.EndOffset
+            topLevel = (
+                $node.Parent -is [Management.Automation.Language.NamedBlockAst] -and
+                $node.Parent.Parent -is
+                [Management.Automation.Language.ScriptBlockAst]
+            )
         })
     }
 
@@ -115,48 +119,14 @@ for ($fence = 0; $fence -lt $sources.Count; $fence++) {
             text = $node.Extent.Text
             start = $node.Extent.StartOffset
             end = $node.Extent.EndOffset
+            topLevel = (
+                $node.Parent -is [Management.Automation.Language.PipelineAst] -and
+                $node.Parent.Parent -is
+                [Management.Automation.Language.NamedBlockAst] -and
+                $node.Parent.Parent.Parent -is
+                [Management.Automation.Language.ScriptBlockAst]
+            )
         })
-
-        if ($commandName -ieq "Set-Variable") {
-            $target = $null
-            for ($index = 1; $index -lt $node.CommandElements.Count; $index++) {
-                $element = $node.CommandElements[$index]
-                if (
-                    $element -is [Management.Automation.Language.CommandParameterAst] -and
-                    $element.ParameterName -ieq "Name"
-                ) {
-                    if ($null -ne $element.Argument) {
-                        $target = $element.Argument.Extent.Text.Trim([char[]]@("'", '"'))
-                    } elseif ($index + 1 -lt $node.CommandElements.Count) {
-                        $targetElement = $node.CommandElements[$index + 1]
-                        if (
-                            $targetElement -is
-                            [Management.Automation.Language.StringConstantExpressionAst]
-                        ) {
-                            $target = $targetElement.Value
-                        } else {
-                            $target = $targetElement.Extent.Text.Trim([char[]]@("'", '"'))
-                        }
-                    }
-                    break
-                }
-            }
-            if (
-                $null -eq $target -and
-                $node.CommandElements.Count -gt 1 -and
-                $node.CommandElements[1] -is
-                [Management.Automation.Language.StringConstantExpressionAst]
-            ) {
-                $target = $node.CommandElements[1].Value
-            }
-            $setVariableTargets.Add([pscustomobject]@{
-                fence = $fence
-                target = $target
-                text = $node.Extent.Text
-                start = $node.Extent.StartOffset
-                end = $node.Extent.EndOffset
-            })
-        }
     }
 
     $ifNodes = $ast.FindAll({
@@ -180,7 +150,6 @@ for ($fence = 0; $fence -lt $sources.Count; $fence++) {
     assignments = [object[]]$assignments
     commands = [object[]]$commands
     conditions = [object[]]$conditions
-    setVariableTargets = [object[]]$setVariableTargets
 } | ConvertTo-Json -Depth 5 -Compress
 '''
 
@@ -194,21 +163,22 @@ CHECK_RUN_GATE = """if (
         $matchingChecks[0].conclusion -cne "success"
     ) {"""
 
-SIGNER_WORKFLOW_ASSIGNMENT = (
-    '$signerWorkflow = "ryanduguid/release-policy/.github/workflows/'
-    'publish-archives.yml"'
+APPROVED_SIGNER_OPTION = (
+    '--signer-workflow '
+    '"ryanduguid/release-policy/.github/workflows/publish-archives.yml"'
 )
+VARIABLE_SIGNER_OPTION = "--signer-workflow $signerWorkflow"
 
 PROVENANCE_COMMANDS = (
-    'gh attestation verify $checksumPath --repo $repo --source-digest $approvedSha --source-ref "refs/tags/$releaseTag" --signer-workflow $signerWorkflow --signer-digest $expectedPolicySha',
-    'gh attestation verify $spdxPath --repo $repo --source-digest $approvedSha --source-ref "refs/tags/$releaseTag" --signer-workflow $signerWorkflow --signer-digest $expectedPolicySha',
-    'gh attestation verify $tarPath --repo $repo --source-digest $approvedSha --source-ref "refs/tags/$releaseTag" --signer-workflow $signerWorkflow --signer-digest $expectedPolicySha',
-    'gh attestation verify $zipPath --repo $repo --source-digest $approvedSha --source-ref "refs/tags/$releaseTag" --signer-workflow $signerWorkflow --signer-digest $expectedPolicySha',
+    'gh attestation verify $checksumPath --repo $repo --source-digest $approvedSha --source-ref "refs/tags/$releaseTag" --signer-workflow "ryanduguid/release-policy/.github/workflows/publish-archives.yml" --signer-digest $expectedPolicySha',
+    'gh attestation verify $spdxPath --repo $repo --source-digest $approvedSha --source-ref "refs/tags/$releaseTag" --signer-workflow "ryanduguid/release-policy/.github/workflows/publish-archives.yml" --signer-digest $expectedPolicySha',
+    'gh attestation verify $tarPath --repo $repo --source-digest $approvedSha --source-ref "refs/tags/$releaseTag" --signer-workflow "ryanduguid/release-policy/.github/workflows/publish-archives.yml" --signer-digest $expectedPolicySha',
+    'gh attestation verify $zipPath --repo $repo --source-digest $approvedSha --source-ref "refs/tags/$releaseTag" --signer-workflow "ryanduguid/release-policy/.github/workflows/publish-archives.yml" --signer-digest $expectedPolicySha',
 )
 
 SPDX_COMMANDS = (
-    'gh attestation verify $tarPath --repo $repo --source-digest $approvedSha --source-ref "refs/tags/$releaseTag" --signer-workflow $signerWorkflow --signer-digest $expectedPolicySha --predicate-type "https://spdx.dev/Document/v2.3"',
-    'gh attestation verify $zipPath --repo $repo --source-digest $approvedSha --source-ref "refs/tags/$releaseTag" --signer-workflow $signerWorkflow --signer-digest $expectedPolicySha --predicate-type "https://spdx.dev/Document/v2.3"',
+    'gh attestation verify $tarPath --repo $repo --source-digest $approvedSha --source-ref "refs/tags/$releaseTag" --signer-workflow "ryanduguid/release-policy/.github/workflows/publish-archives.yml" --signer-digest $expectedPolicySha --predicate-type "https://spdx.dev/Document/v2.3"',
+    'gh attestation verify $zipPath --repo $repo --source-digest $approvedSha --source-ref "refs/tags/$releaseTag" --signer-workflow "ryanduguid/release-policy/.github/workflows/publish-archives.yml" --signer-digest $expectedPolicySha --predicate-type "https://spdx.dev/Document/v2.3"',
 )
 
 RELEASE_VERIFICATION_COMMANDS = (
@@ -348,6 +318,7 @@ def assert_runbook_contract(testcase: unittest.TestCase, text: str) -> None:
         if command["name"] is not None
         and command["name"].casefold() == "git"
         and command["text"] == "git fetch origin main --tags"
+        and command["topLevel"]
     ]
     testcase.assertEqual(len(fetch_commands), 2)
     post_approval_fetches = [
@@ -371,6 +342,7 @@ def assert_runbook_contract(testcase: unittest.TestCase, text: str) -> None:
         for assignment in ast["assignments"]
         if assignment["fence"] == approval_fence
         and assignment["text"] == POST_APPROVAL_TAG_QUERY
+        and assignment["topLevel"]
     ]
     testcase.assertEqual(len(tag_queries), 1)
     tag_query = tag_queries[0]
@@ -393,6 +365,7 @@ def assert_runbook_contract(testcase: unittest.TestCase, text: str) -> None:
         and command["name"].casefold() == "git"
         and command["text"]
         == "git tag -a $releaseTag $approvedSha -m $releaseTag"
+        and command["topLevel"]
     ]
     testcase.assertEqual(len(tag_create_commands), 1)
     tag_create_command = tag_create_commands[0]
@@ -450,24 +423,6 @@ def assert_runbook_contract(testcase: unittest.TestCase, text: str) -> None:
         'if (-not ($checksumLines -ccontains "$payloadDigest  $payloadName"))',
         text,
     )
-    signer_assignments = [
-        assignment
-        for assignment in ast["assignments"]
-        if assignment["name"] is not None
-        and assignment["name"].casefold() == "signerworkflow"
-    ]
-    signer_set_variables = [
-        command
-        for command in ast["setVariableTargets"]
-        if command["target"] is not None
-        and command["target"].casefold() == "signerworkflow"
-    ]
-    testcase.assertEqual(
-        [assignment["text"] for assignment in signer_assignments],
-        [SIGNER_WORKFLOW_ASSIGNMENT],
-    )
-    testcase.assertEqual(signer_set_variables, [])
-
     attestation_lines = [
         line.strip()
         for line in text.splitlines()
@@ -599,10 +554,9 @@ class ReleaseRunbookTests(unittest.TestCase):
                 'if ($checksumLines -ccontains "$payloadDigest  $payloadName")',
             ),
             "signer workflow is changed": (
-                '$signerWorkflow = "ryanduguid/release-policy/.github/workflows/'
-                'publish-archives.yml"',
-                '$signerWorkflow = "ryanduguid/hardhat-ledger/.github/workflows/'
-                'release.yml"',
+                APPROVED_SIGNER_OPTION,
+                '--signer-workflow '
+                '"ryanduguid/hardhat-ledger/.github/workflows/release.yml"',
             ),
             "attestation source digest is changed": (
                 "--source-digest $approvedSha",
@@ -625,8 +579,7 @@ class ReleaseRunbookTests(unittest.TestCase):
                 PROVENANCE_COMMANDS[2],
             ),
             "one SPDX verification is removed": (
-                '$signerWorkflow --signer-digest $expectedPolicySha '
-                '--predicate-type "https://spdx.dev/Document/v2.3"',
+                SPDX_COMMANDS[0],
                 "# removed SPDX verification",
             ),
             "one release asset verification is removed": (
@@ -671,11 +624,16 @@ class ReleaseRunbookTests(unittest.TestCase):
         text = RUNBOOK.read_text(encoding="utf-8")
         assert_runbook_contract(self, text)
 
-        first_attestation = "    " + PROVENANCE_COMMANDS[0]
+        first_attestation = PROVENANCE_COMMANDS[0]
+        variable_attestation = first_attestation.replace(
+            APPROVED_SIGNER_OPTION, VARIABLE_SIGNER_OPTION
+        )
+        first_attestation = "    " + first_attestation
         self.assertIn(first_attestation, text)
         unsafe_signer_reassignment = text.replace(
             first_attestation,
-            '    $signerWorkflow = "unsafe/example.yml"\n' + first_attestation,
+            '    $signerWorkflow = "unsafe/example.yml"\n    '
+            + variable_attestation,
             1,
         )
 
@@ -708,17 +666,23 @@ class ReleaseRunbookTests(unittest.TestCase):
         text = RUNBOOK.read_text(encoding="utf-8")
         assert_runbook_contract(self, text)
 
-        first_attestation = "    " + PROVENANCE_COMMANDS[0]
+        first_attestation = PROVENANCE_COMMANDS[0]
+        variable_attestation = first_attestation.replace(
+            APPROVED_SIGNER_OPTION, VARIABLE_SIGNER_OPTION
+        )
+        first_attestation = "    " + first_attestation
         self.assertIn(first_attestation, text)
         braced_signer_reassignment = text.replace(
             first_attestation,
-            '    ${signerWorkflow} = "unsafe/example.yml"\n' + first_attestation,
+            '    ${signerWorkflow} = "unsafe/example.yml"\n    '
+            + variable_attestation,
             1,
         )
         command_signer_reassignment = text.replace(
             first_attestation,
             '    Set-Variable -Name signerWorkflow -Value "unsafe/example.yml"\n'
-            + first_attestation,
+            '    '
+            + variable_attestation,
             1,
         )
 
@@ -745,6 +709,59 @@ class ReleaseRunbookTests(unittest.TestCase):
             "Set-Variable signer reassignment": command_signer_reassignment,
             "commented post-approval fetch": commented_post_approval_fetch,
             "commented candidate tag query": commented_candidate_tag_query,
+        }
+        for name, mutated in mutations.items():
+            with self.subTest(mutation=name):
+                with self.assertRaises(AssertionError):
+                    assert_runbook_contract(self, mutated)
+
+    def test_runbook_contract_rejects_structural_bypasses(self) -> None:
+        text = RUNBOOK.read_text(encoding="utf-8")
+        assert_runbook_contract(self, text)
+
+        first_attestation = PROVENANCE_COMMANDS[0]
+        variable_attestation = first_attestation.replace(
+            APPROVED_SIGNER_OPTION, VARIABLE_SIGNER_OPTION
+        )
+        self.assertIn("    " + first_attestation, text)
+
+        def reintroduce_signer_seam(assignment: str) -> str:
+            return text.replace(
+                "    " + first_attestation,
+                "    " + assignment + "\n    " + variable_attestation,
+                1,
+            )
+
+        short_parameter_reassignment = reintroduce_signer_seam(
+            'Set-Variable -N signerWorkflow -Value "unsafe/example.yml"'
+        )
+        alias_reassignment = reintroduce_signer_seam(
+            'sv -Name signerWorkflow -Value "unsafe/example.yml"'
+        )
+
+        approval = text.index("$confirmedApprovedSha -cne $approvedSha")
+        pre_approval = text[:approval]
+        post_approval = text[approval:]
+        fetch = "git fetch origin main --tags"
+        self.assertIn(fetch, post_approval)
+        conditional_fetch = pre_approval + post_approval.replace(
+            fetch, "if ($false) {\n    " + fetch + "\n}", 1
+        )
+
+        tag_query = (
+            '$postApprovalTag = git ls-remote --tags origin '
+            '"refs/tags/$releaseTag"'
+        )
+        self.assertIn(tag_query, post_approval)
+        conditional_tag_query = pre_approval + post_approval.replace(
+            tag_query, "if ($false) {\n    " + tag_query + "\n}", 1
+        )
+
+        mutations = {
+            "short Set-Variable parameter": short_parameter_reassignment,
+            "Set-Variable alias": alias_reassignment,
+            "conditional post-approval fetch": conditional_fetch,
+            "conditional candidate tag query": conditional_tag_query,
         }
         for name, mutated in mutations.items():
             with self.subTest(mutation=name):
