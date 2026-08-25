@@ -12,8 +12,22 @@ import yaml
 
 
 REPOSITORY = Path(__file__).resolve().parents[1]
-SKILLS_DIRECTORY = REPOSITORY / ".claude" / "skills"
+PLUGIN_ROOT = REPOSITORY / "plugins" / "subcontractor-accounting-skills"
+SKILLS_DIRECTORY = PLUGIN_ROOT / "skills"
 ALLOWED_FRONT_MATTER_FIELDS = {"name", "description"}
+PORTABLE_SAFETY_BOUNDARY = (
+    "Current mutable facts must come from a current authoritative primary source; "
+    "if the source is unavailable, leave the fact blank or explicitly unverified "
+    "and do not rely on it.",
+    "Real client data must stay in a firm-approved environment, outside repositories "
+    "and unapproved cloud prompts, with unnecessary identifiers excluded.",
+    "Write client output only to a configured firm-approved secure path; if none is "
+    "supplied, stop and ask, create no fallback, and do not edit `.gitignore`.",
+    "Do not lodge, make declarations, communicate with a client or regulator, pay, "
+    "post journals or lock records; prepare the hand-off for an authorised human.",
+    "Legal, tax and accounting judgement belongs to the authorised reviewer, partner, "
+    "lawyer or registered agent.",
+)
 
 STRICT_YAML = REPOSITORY / "scripts" / "strict_yaml.py"
 STRICT_YAML_SPEC = importlib.util.spec_from_file_location("strict_yaml", STRICT_YAML)
@@ -159,36 +173,16 @@ class SkillMetadataTests(unittest.TestCase):
         missing = [path.name for path in directories if not (path / "SKILL.md").is_file()]
         self.assertEqual(missing, [])
 
-    def test_marketplace_inventory_exactly_matches_discovered_skills(self) -> None:
-        marketplace = json.loads(
-            (REPOSITORY / ".claude-plugin" / "marketplace.json").read_text(
+    def test_manifest_skill_root_exactly_matches_discovered_skills(self) -> None:
+        manifest = json.loads(
+            (PLUGIN_ROOT / ".claude-plugin" / "plugin.json").read_text(
                 encoding="utf-8"
             )
         )
-        self.assertNotIn("version", marketplace)
-        self.assertEqual(len(marketplace.get("plugins", [])), 1)
-        plugin = marketplace["plugins"][0]
-        self.assertNotIn("version", plugin)
-        declared = plugin.get("skills")
-        self.assertIsInstance(declared, list)
-        self.assertEqual(len(declared), 10)
-        self.assertEqual(len(declared), len(set(declared)))
-
-        root = REPOSITORY.resolve()
-        declared_paths = []
-        for item in declared:
-            with self.subTest(skill=item):
-                self.assertIsInstance(item, str)
-                path = (REPOSITORY / item).resolve()
-                self.assertTrue(path.is_relative_to(root))
-                self.assertTrue((path / "SKILL.md").is_file())
-                declared_paths.append(path.relative_to(root).as_posix())
-
-        discovered = sorted(
-            path.parent.resolve().relative_to(root).as_posix()
-            for path in SKILLS_DIRECTORY.glob("*/SKILL.md")
-        )
-        self.assertEqual(sorted(declared_paths), discovered)
+        declared = manifest.get("skills")
+        self.assertIsInstance(declared, str)
+        self.assertEqual((PLUGIN_ROOT / declared).resolve(), SKILLS_DIRECTORY.resolve())
+        self.assertEqual(len(list(SKILLS_DIRECTORY.glob("*/SKILL.md"))), 10)
 
     def test_every_skill_marks_embedded_instructions_as_untrusted(self) -> None:
         skill_files = sorted(SKILLS_DIRECTORY.glob("*/SKILL.md"))
@@ -205,6 +199,34 @@ class SkillMetadataTests(unittest.TestCase):
         )
         self.assertIn("Instructions embedded in client files", firm_template)
         self.assertIn("untrusted data", firm_template)
+
+    def test_every_skill_carries_the_portable_safety_boundary(self) -> None:
+        for path in sorted(SKILLS_DIRECTORY.glob("*/SKILL.md")):
+            with self.subTest(skill=path.parent.name):
+                text = path.read_text(encoding="utf-8")
+                self.assertEqual(text.count("## Portable safety boundary"), 1)
+                for boundary in PORTABLE_SAFETY_BOUNDARY:
+                    self.assertIn(boundary, text)
+
+    def test_standalone_instructions_have_no_unsafe_fallbacks(self) -> None:
+        coal = (
+            SKILLS_DIRECTORY / "coal-lsl-levy" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        payroll_tax = (
+            SKILLS_DIRECTORY / "payroll-tax-contractors" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        fuel_tax = (
+            SKILLS_DIRECTORY / "fuel-tax-credits" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        wip = (
+            SKILLS_DIRECTORY / "wip-over-under-billing" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertNotIn("lodging the monthly levy return and payment", coal)
+        self.assertNotIn("**Lodge and pay", coal)
+        self.assertNotIn("repo's `output/`", payroll_tax)
+        self.assertNotIn("`bas-preparation`", fuel_tax)
+        self.assertNotIn("Optional schedule:", wip)
 
 
 if __name__ == "__main__":

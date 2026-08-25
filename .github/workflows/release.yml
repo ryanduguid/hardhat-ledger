@@ -3,204 +3,26 @@ name: Release
 on:
   push:
     tags:
-      - "v*.*.*"
+      - "v*"
 
 permissions:
   contents: read
 
-concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
-  release:
-    timeout-minutes: 15
-    name: build, attest and publish
+  refuse-frozen:
+    if: github.ref_name == 'v0.1.0'
     runs-on: ubuntu-latest
-    permissions:
-      contents: write # Create the release and upload its assets.
-      id-token: write # Obtain the OIDC identity used for attestations.
-      attestations: write # Publish build-provenance and SBOM attestations.
-    env:
-      GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Check out the tagged source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Enforce the operator tag gate
-        id: gate
-        shell: bash
+      - name: v0.1.0 is frozen
         run: |
-          set -euo pipefail
-          tag="${GITHUB_REF_NAME}"
-          if [[ ! "${tag}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-            echo "Release tags must use canonical vMAJOR.MINOR.PATCH form." >&2
-            exit 1
-          fi
-          if [[ "${tag}" == "v0.1.0" ]]; then
-            echo "v0.1.0 is frozen and must never be rebuilt or replaced." >&2
-            exit 1
-          fi
-          if [[ "$(git cat-file -t "refs/tags/${tag}")" != "tag" ]]; then
-            echo "${tag} is not an annotated tag." >&2
-            exit 1
-          fi
-
-          tag_commit="$(git rev-parse "refs/tags/${tag}^{commit}")"
-          checkout_commit="$(git rev-parse HEAD)"
-          main_commit="$(gh api \
-            -H "X-GitHub-Api-Version: 2026-03-10" \
-            "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" \
-            --jq '.object.sha')"
-          if [[ "${tag_commit}" != "${checkout_commit}" || "${tag_commit}" != "${main_commit}" ]]; then
-            echo "The annotated tag must point to the exact current main commit." >&2
-            echo "tag=${tag_commit} checkout=${checkout_commit} main=${main_commit}" >&2
-            exit 1
-          fi
-          if [[ ! -f "docs/releases/${tag}.md" ]]; then
-            echo "Committed release notes are missing: docs/releases/${tag}.md" >&2
-            exit 1
-          fi
-          existing_release_ids="$(gh api --paginate \
-            -H "X-GitHub-Api-Version: 2026-03-10" \
-            "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
-            --jq ".[] | select(.tag_name == \"${tag}\") | .id")"
-          if [[ -n "${existing_release_ids}" ]]; then
-            echo "A GitHub release already exists for ${tag}; refusing to replace it." >&2
-            exit 1
-          fi
-          if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
-            echo "The checked-out tracked tree is not clean." >&2
-            exit 1
-          fi
-
-          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
-          echo "commit=${tag_commit}" >> "${GITHUB_OUTPUT}"
-
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-
-      - name: Install test dependencies
-        run: python -m pip install --disable-pip-version-check --no-deps --requirement requirements-test.txt
-
-      - name: Run repository tests
-        run: python -m unittest discover -s tests -v
-
-      - name: Verify all ten Skills CLI entrypoints
-        run: python tests/verify_skills_cli.py
-
-      - name: Build deterministic release assets
-        run: >-
-          python scripts/build_release.py
-          --repository .
-          --output-dir dist
-          --version "${{ steps.gate.outputs.tag }}"
-
-      - name: Check the release asset inventory
-        shell: bash
-        run: |
-          set -euo pipefail
-          tag="${{ steps.gate.outputs.tag }}"
-          expected="$(printf '%s\n' \
-            "SHA256SUMS" \
-            "subcontractor-accounting-skills-${tag}.spdx.json" \
-            "subcontractor-accounting-skills-${tag}.tar.gz" \
-            "subcontractor-accounting-skills-${tag}.zip")"
-          actual="$(find dist -maxdepth 1 -type f -printf '%f\n' | sort)"
-          if [[ "${actual}" != "${expected}" ]]; then
-            echo "Unexpected release asset inventory." >&2
-            printf 'Expected:\n%s\nActual:\n%s\n' "${expected}" "${actual}" >&2
-            exit 1
-          fi
-          (cd dist && sha256sum --check SHA256SUMS)
-
-      - name: Attest the release build
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
-        with:
-          subject-path: |
-            dist/subcontractor-accounting-skills-${{ steps.gate.outputs.tag }}.zip
-            dist/subcontractor-accounting-skills-${{ steps.gate.outputs.tag }}.tar.gz
-            dist/subcontractor-accounting-skills-${{ steps.gate.outputs.tag }}.spdx.json
-            dist/SHA256SUMS
-
-      - name: Attest the SPDX SBOM for both source archives
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
-        with:
-          subject-path: |
-            dist/subcontractor-accounting-skills-${{ steps.gate.outputs.tag }}.zip
-            dist/subcontractor-accounting-skills-${{ steps.gate.outputs.tag }}.tar.gz
-          sbom-path: dist/subcontractor-accounting-skills-${{ steps.gate.outputs.tag }}.spdx.json
-
-      - name: Create, verify and publish the release
-        shell: bash
-        run: |
-          set -euo pipefail
-          tag="${{ steps.gate.outputs.tag }}"
-          tag_commit="${{ steps.gate.outputs.commit }}"
-          main_commit="$(gh api \
-            -H "X-GitHub-Api-Version: 2026-03-10" \
-            "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" \
-            --jq '.object.sha')"
-          if [[ "${tag_commit}" != "${main_commit}" ]]; then
-            echo "main advanced after the gate; refusing to publish a stale tag." >&2
-            exit 1
-          fi
-
-          zip="dist/subcontractor-accounting-skills-${tag}.zip"
-          tar="dist/subcontractor-accounting-skills-${tag}.tar.gz"
-          sbom="dist/subcontractor-accounting-skills-${tag}.spdx.json"
-          notes="docs/releases/${tag}.md"
-          gh release create "${tag}" \
-            --draft \
-            --verify-tag \
-            --title "${tag}" \
-            --notes-file "${notes}" \
-            "${zip}#Deterministic source ZIP" \
-            "${tar}#Deterministic source tar archive" \
-            "${sbom}#SPDX 2.3 SBOM" \
-            "dist/SHA256SUMS#SHA-256 checksums"
-
-          release_id="$(python scripts/find_draft_release.py \
-            --repo "${GITHUB_REPOSITORY}" \
-            --tag "${tag}" \
-            --attempts 5 \
-            --delay-seconds 5)"
-
-          if [[ "$(gh api \
-            -H "X-GitHub-Api-Version: 2026-03-10" \
-            "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
-            --jq '.draft')" != "true" ]]; then
-            echo "The release was not created as a draft." >&2
-            exit 1
-          fi
-          expected="$(printf '%s\n' \
-            "SHA256SUMS" \
-            "subcontractor-accounting-skills-${tag}.spdx.json" \
-            "subcontractor-accounting-skills-${tag}.tar.gz" \
-            "subcontractor-accounting-skills-${tag}.zip")"
-          actual="$(gh api \
-            -H "X-GitHub-Api-Version: 2026-03-10" \
-            "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
-            --jq '.assets[].name' | sort)"
-          if [[ "${actual}" != "${expected}" ]]; then
-            echo "The draft release does not contain the exact asset set." >&2
-            exit 1
-          fi
-
-          gh api --method PATCH \
-            -H "X-GitHub-Api-Version: 2026-03-10" \
-            "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
-            -F draft=false \
-            >/dev/null
-          if [[ "$(gh api \
-            -H "X-GitHub-Api-Version: 2026-03-10" \
-            "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" \
-            --jq '.immutable')" != "true" ]]; then
-            echo "Published release is not immutable. The operator precondition was not met." >&2
-            exit 1
-          fi
+          echo "v0.1.0 is frozen and must never be rebuilt or replaced." >&2
+          exit 1
+  release:
+    if: github.ref_name != 'v0.1.0'
+    permissions:
+      attestations: write # Record provenance and SBOM attestations for release assets.
+      contents: write # Create the draft release, upload assets and publish it.
+      id-token: write # Obtain the OIDC identity required to sign attestations.
+    uses: ryanduguid/release-policy/.github/workflows/release-archive.yml@47480b782926179b621ec1c6643ef88c80fc8fd4
+    with:
+      artifact-stem: subcontractor-accounting-skills

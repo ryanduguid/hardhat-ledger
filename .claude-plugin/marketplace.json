@@ -20,20 +20,8 @@
         "contracting",
         "payroll-tax"
       ],
-      "source": "./",
-      "strict": false,
-      "skills": [
-        "./.claude/skills/coal-lsl-levy",
-        "./.claude/skills/contract-cost-tracking",
-        "./.claude/skills/contracting-exports",
-        "./.claude/skills/contractor-super-tpar",
-        "./.claude/skills/fuel-tax-credits",
-        "./.claude/skills/payroll-tax-contractors",
-        "./.claude/skills/plant-and-equipment-costing",
-        "./.claude/skills/progress-claim-preparation",
-        "./.claude/skills/retention-schedule",
-        "./.claude/skills/wip-over-under-billing"
-      ],
+      "source": "./plugins/subcontractor-accounting-skills",
+      "strict": true,
       "homepage": "https://github.com/ryanduguid/hardhat-ledger",
       "license": "MIT"
     }

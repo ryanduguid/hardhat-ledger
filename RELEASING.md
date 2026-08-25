@@ -24,14 +24,12 @@ Run the local gates against that exact commit:
 python -m pip install --disable-pip-version-check --no-deps --requirement requirements-test.txt
 python -m unittest discover -s tests -v
 python tests/verify_skills_cli.py
-python scripts/build_release.py --repository . --output-dir dist --version v0.1.1
-Push-Location dist
-Get-Content SHA256SUMS
-Pop-Location
+python scripts/validate_validation.py
 ```
 
-`dist` must be absent or empty before the build. Delete only this generated,
-ignored directory after inspecting it; never use a broad cleanup command.
+Release archives are built by the reusable `release-archive.yml` workflow in
+`ryanduguid/release-policy`, pinned from `.github/workflows/release.yml`. Do
+not build or upload assets by hand.
 
 ## 2. Enable and read back immutable releases
 

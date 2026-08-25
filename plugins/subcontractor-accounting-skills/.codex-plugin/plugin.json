@@ -1,6 +1,6 @@
 {
   "name": "subcontractor-accounting-skills",
-  "version": "0.1.2",
+  "version": "0.1.4",
   "license": "MIT",
   "repository": "https://github.com/ryanduguid/hardhat-ledger",
   "homepage": "https://github.com/ryanduguid/hardhat-ledger",
@@ -8,7 +8,7 @@
     "name": "Ryan Duguid"
   },
   "description": "Australian construction and mining subcontractor workflows: progress claims, retentions, WIP and over/under-billing, contract cost tracking, fuel tax credits, Coal LSL, payroll tax contractor provisions, contractor super and TPAR. Prep-only. Not lodgment. Not tax advice.",
-  "skills": "./.claude/skills/",
+  "skills": "./skills",
   "keywords": [
     "australian tax",
     "accounting",
@@ -25,12 +25,6 @@
     "claude code",
     "agent skills"
   ],
-  "safety": {
-    "humanReviewRequired": true,
-    "noLodgment": true,
-    "noLodgmentBoundary": "Never lodge, file, submit, transmit, declare, pay, or finalise any tax return, BAS, TPAR, payroll tax return, fuel tax credit claim, Coal LSL return, or other material with the ATO, a state revenue office, or any other government agency.",
-    "preserveReviewFlags": true
-  },
   "interface": {
     "displayName": "Subcontractor accounting skills",
     "developerName": "Ryan Duguid",
@@ -44,7 +38,6 @@
     "defaultPrompt": [
       "Prepare progress claim 7 for this contract from the cost ledger and the schedule of rates. Show the retention held to date against the contract cap and list anything that does not tie."
     ],
-    "websiteURL": "https://github.com/ryanduguid/hardhat-ledger",
-    "privacyPolicyURL": "https://github.com/ryanduguid/hardhat-ledger/blob/main/SECURITY.md"
+    "websiteURL": "https://github.com/ryanduguid/hardhat-ledger"
   }
 }

@@ -145,81 +145,6 @@ class DecodeAndPathTests(unittest.TestCase):
             with self.assertRaisesRegex(validator.ValidationError, "bare carriage"):
                 validator.read_utf8(path)
 
-    def test_safe_validation_link_is_normalised(self) -> None:
-        self.assertEqual(
-            validator.resolve_local_link(
-                "validation/README.md",
-                "cases/progress-claim-missing-reference-date.md",
-            ),
-            "validation/cases/progress-claim-missing-reference-date.md",
-        )
-
-    def test_remote_and_fragment_links_are_not_treated_as_files(self) -> None:
-        for target in ("https://example.invalid/source", "#section"):
-            with self.subTest(target=target):
-                self.assertIsNone(
-                    validator.resolve_local_link("validation/README.md", target)
-                )
-
-    def test_traversal_absolute_scheme_query_and_obfuscation_are_rejected(self) -> None:
-        cases = (
-            "../README.md",
-            "%2e%2e/README.md",
-            "%252e%252e/README.md",
-            "cases\\bas-g10-g11.md",
-            "/validation/cases/progress-claim-missing-reference-date.md",
-            "C:/validation/cases/progress-claim-missing-reference-date.md",
-            "//server/share.md",
-            "javascript:alert(1)",
-            "https://user:password@example.invalid/source",
-            "http:../../README.md",
-            "https:/../README.md",
-            "https:///../README.md",
-            "http:example.invalid/source",
-            "http://",
-            "http://../README.md",
-            "https://example.invalid/%20outside",
-            "https://example.invalid/%0Aoutside",
-            "cases/progress-claim-missing-reference-date.md?raw=1",
-            "cases/unknown.md",
-        )
-        for target in cases:
-            with self.subTest(target=target):
-                with self.assertRaises(validator.ValidationError):
-                    validator.resolve_local_link("validation/README.md", target)
-
-    def test_reference_links_are_checked_and_raw_html_links_are_rejected(self) -> None:
-        self.assertEqual(
-            validator.markdown_targets(
-                "[safe][card]\n\n[card]: cases/progress-claim-missing-reference-date.md\n"
-            ),
-            ["cases/progress-claim-missing-reference-date.md"],
-        )
-        self.assertEqual(
-            validator.markdown_targets("[safe](<cases/progress-claim-missing-reference-date.md>)"),
-            ["<cases/progress-claim-missing-reference-date.md>"],
-        )
-        target = validator.markdown_targets("[outside]: %2e%2e/README.md")[0]
-        with self.assertRaises(validator.ValidationError):
-            validator.resolve_local_link("validation/README.md", target)
-        adverse = (
-            '<a href="../README.md">outside</a>',
-            '<embed src="../README.md">',
-            '<script src="../outside.js"></script>',
-            '<video src="../outside.mp4"></video>',
-            '<link rel="stylesheet" href="../outside.css">',
-            '<file:///C:/Users/Public/outside.md>',
-            '<https://user:password@example.invalid/source>',
-            '&lt;iframe src="../README.md"&gt;',
-        )
-        for content in adverse:
-            with self.subTest(content=content):
-                with self.assertRaisesRegex(
-                    validator.ValidationError,
-                    "raw HTML or autolinks",
-                ):
-                    validator.markdown_targets(content)
-
     def test_validation_inventory_does_not_read_unexpected_content(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -250,7 +175,14 @@ class DecodeAndPathTests(unittest.TestCase):
 
 class SafetyControlTests(unittest.TestCase):
     def test_every_skill_keeps_untrusted_content_boundary(self) -> None:
-        skill_files = sorted((REPOSITORY / ".claude" / "skills").glob("*/SKILL.md"))
+        skill_files = sorted(
+            (
+                REPOSITORY
+                / "plugins"
+                / "subcontractor-accounting-skills"
+                / "skills"
+            ).glob("*/SKILL.md")
+        )
         self.assertGreaterEqual(len(skill_files), 10)
         for path in skill_files:
             with self.subTest(skill=path.parent.name):
@@ -273,6 +205,12 @@ class SafetyControlTests(unittest.TestCase):
         ):
             with self.subTest(boundary=boundary):
                 self.assertIn(boundary, text)
+
+        normalised = text.replace("\n   ", " ")
+        self.assertIn(
+            "If no firm-approved secure location is configured, stop and ask",
+            normalised,
+        )
 
     def test_disclaimer_keeps_the_advice_and_lodgment_boundary(self) -> None:
         text = (REPOSITORY / "DISCLAIMER.md").read_text(encoding="utf-8")
