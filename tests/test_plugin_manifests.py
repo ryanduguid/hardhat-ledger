@@ -44,7 +44,10 @@ class PluginManifestTests(unittest.TestCase):
         generic_marketplace = load_json(
             REPOSITORY / ".agents" / "plugins" / "marketplace.json"
         )
+        self.assertNotIn("version", generic_marketplace)
+        self.assertEqual(len(generic_marketplace.get("plugins", [])), 1)
         generic_entry = generic_marketplace["plugins"][0]
+        self.assertNotIn("version", generic_entry)
         self.assertEqual(generic_entry["name"], PLUGIN_NAME)
         self.assertEqual(
             generic_entry["source"],
@@ -54,7 +57,10 @@ class PluginManifestTests(unittest.TestCase):
         claude_marketplace = load_json(
             REPOSITORY / ".claude-plugin" / "marketplace.json"
         )
+        self.assertNotIn("version", claude_marketplace)
+        self.assertEqual(len(claude_marketplace.get("plugins", [])), 1)
         claude_entry = claude_marketplace["plugins"][0]
+        self.assertNotIn("version", claude_entry)
         self.assertEqual(claude_entry["name"], PLUGIN_NAME)
         self.assertEqual(claude_entry["source"], f"./plugins/{PLUGIN_NAME}")
 
@@ -76,7 +82,11 @@ class PluginManifestTests(unittest.TestCase):
 
     def test_concrete_manifest_versions_match_the_release_version(self) -> None:
         version = (REPOSITORY / "VERSION").read_text(encoding="utf-8").strip()
-        self.assertEqual(version, "0.1.4")
+        self.assertRegex(version, r"^[0-9]+\.[0-9]+\.[0-9]+$")
+        release_heading = (
+            REPOSITORY / "RELEASE_NOTES.md"
+        ).read_text(encoding="utf-8").splitlines()[0]
+        self.assertEqual(release_heading, f"# v{version}")
 
         for runtime in (".claude-plugin", ".codex-plugin"):
             with self.subTest(runtime=runtime):
