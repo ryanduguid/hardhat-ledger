@@ -16,9 +16,11 @@ individual skill remains the detailed procedure.
 4. Use only the firm's approved environment for real client data. Keep real
    client data out of this repository and unapproved cloud prompts; exclude
    TFNs and any identifier the task does not require.
-5. Put generated client output only in the firm-approved secure location. If a
-   repo-adjacent path is proposed, ask first, confirm it is already excluded
-   from version control and do not edit `.gitignore` without explicit approval.
+5. Put generated client output only in the firm-approved secure location. If no
+   firm-approved secure location is configured, stop and ask. Do not create a
+   fallback. If a repo-adjacent path is proposed, ask first, confirm it is
+   already excluded from version control and do not edit `.gitignore` without
+   explicit approval.
 6. A reconciliation is complete only when its source, period, basis, settings
    and rounding treatment are documented. An unresolved difference remains a
    reviewer-facing exception.

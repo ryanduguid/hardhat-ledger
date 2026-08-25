@@ -37,6 +37,14 @@ The other skills in this pack assume clean, period-locked inputs. This skill is 
 - Row-count check performed against the on-screen figure, or explicitly recorded as not performed
 - Unassigned dimensions, closed-job movement and missing work states listed as exceptions rather than silently fixed
 
+## Portable safety boundary
+
+- Current mutable facts must come from a current authoritative primary source; if the source is unavailable, leave the fact blank or explicitly unverified and do not rely on it.
+- Real client data must stay in a firm-approved environment, outside repositories and unapproved cloud prompts, with unnecessary identifiers excluded.
+- Write client output only to a configured firm-approved secure path; if none is supplied, stop and ask, create no fallback, and do not edit `.gitignore`.
+- Do not lodge, make declarations, communicate with a client or regulator, pay, post journals or lock records; prepare the hand-off for an authorised human.
+- Legal, tax and accounting judgement belongs to the authorised reviewer, partner, lawyer or registered agent.
+
 ## Boundaries
 
 - If an export is incomplete or fails a tie-out for an export reason (wrong date, wrong basis, draft transactions included, truncated rows), stop and re-export. Never patch numbers, re-key totals or fill a gap with an estimate.

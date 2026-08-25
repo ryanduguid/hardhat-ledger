@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 REPOSITORY = Path(__file__).resolve().parents[1]
-SKILLS = REPOSITORY / ".claude" / "skills"
+SKILLS = REPOSITORY / "plugins" / "subcontractor-accounting-skills" / "skills"
 
 
 def skill_text(name: str) -> str:
