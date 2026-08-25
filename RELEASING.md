@@ -22,7 +22,7 @@ ineligible release candidates.
 
 ## Future release procedure
 
-Use a clean checkout of remote `main` and one PowerShell 7 session. Do not
+Use a clean checkout of remote `main` and PowerShell 7.4 or newer. Do not
 build or upload release assets locally. The caller's single privileged job
 must delegate to the full-commit-pinned `release-skills.yml`; read-only local
 and shared verification must complete before the tag is approved.
@@ -38,6 +38,9 @@ tag nor release exists.
 ```powershell
 $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $true
+if ($PSVersionTable.PSVersion -lt [version]"7.4") {
+    throw "PowerShell 7.4 or newer is required"
+}
 $repo = "ryanduguid/hardhat-ledger"
 $releaseTag = "v0.1.6" # Replace with the reviewed new version.
 $expectedPolicySha = "f180faa567e95669224211d0282b3b437fe79ea9"
@@ -278,6 +281,7 @@ if ($downloadItem.Attributes -band [IO.FileAttributes]::ReparsePoint) {
     throw "download directory is a reparse point"
 }
 
+$verificationSucceeded = $false
 try {
     gh release download $releaseTag --repo $repo --dir $resolvedDownloadPath
     $checksumPath = Join-Path $resolvedDownloadPath $checksumAsset
@@ -330,8 +334,9 @@ try {
     gh release verify-asset $releaseTag $spdxPath --repo $repo
     gh release verify-asset $releaseTag $tarPath --repo $repo
     gh release verify-asset $releaseTag $zipPath --repo $repo
+    $verificationSucceeded = $true
 } finally {
-    if (Test-Path -LiteralPath $downloadPath) {
+    if ($verificationSucceeded -and (Test-Path -LiteralPath $downloadPath)) {
         $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd(
             [IO.Path]::DirectorySeparatorChar,
             [IO.Path]::AltDirectorySeparatorChar
@@ -356,6 +361,14 @@ try {
             throw "cleanup path is a reparse point"
         }
         Remove-Item -LiteralPath $resolvedDownloadPath -Force -Recurse
+    } elseif (-not $verificationSucceeded) {
+        try {
+            [Console]::Error.WriteLine(
+                "release verification failed; evidence retained at literal path: $resolvedDownloadPath"
+            )
+        } catch {
+            # Do not mask the original verification failure.
+        }
     }
 }
 ```

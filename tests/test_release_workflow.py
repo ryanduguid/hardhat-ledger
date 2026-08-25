@@ -1,4 +1,4 @@
-"""Test the exact-pinned shared skill-release policy and caller activation contract."""
+"""Test the thin caller activation adapter; exact-pinned shared skill-release policy owns frozen-tag refusal."""
 
 from pathlib import Path
 from copy import deepcopy

@@ -13,8 +13,18 @@ EVIDENCE = ROOT / "docs" / "releases" / "v0.1.5.md"
 POWERSHELL = shutil.which("pwsh")
 FENCE = re.compile(r"```powershell\n(?P<code>.*?)\n```", re.DOTALL)
 
+POWERSHELL_VERSION_PREREQUISITE = (
+    "Use a clean checkout of remote `main` and PowerShell 7.4 or newer."
+)
+POWERSHELL_VERSION_GATE = r'''if ($PSVersionTable.PSVersion -lt [version]"7.4") {
+    throw "PowerShell 7.4 or newer is required"
+}'''
+
 INITIAL_FENCE = r"""$ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $true
+if ($PSVersionTable.PSVersion -lt [version]"7.4") {
+    throw "PowerShell 7.4 or newer is required"
+}
 $repo = "ryanduguid/hardhat-ledger"
 $releaseTag = "v0.1.6" # Replace with the reviewed new version.
 $expectedPolicySha = "f180faa567e95669224211d0282b3b437fe79ea9"
@@ -189,6 +199,20 @@ RELEASE_VERIFICATION_COMMANDS = (
     "gh release verify-asset $releaseTag $zipPath --repo $repo",
 )
 
+VERIFICATION_NOT_COMPLETE = "$verificationSucceeded = $false"
+VERIFICATION_COMPLETE = "$verificationSucceeded = $true"
+CLEANUP_SUCCESS_GATE = """} finally {
+    if ($verificationSucceeded -and (Test-Path -LiteralPath $downloadPath)) {"""
+EVIDENCE_RETENTION_NOTICE = """    } elseif (-not $verificationSucceeded) {
+        try {
+            [Console]::Error.WriteLine(
+                "release verification failed; evidence retained at literal path: $resolvedDownloadPath"
+            )
+        } catch {
+            # Do not mask the original verification failure.
+        }
+    }"""
+
 PROTECTED_TAG_LIVE_PROOF = """$protectedTagRef = gh api "repos/$repo/git/ref/tags/v0.1.4" | ConvertFrom-Json
 if ($protectedTagRef.object.type -cne "tag") { throw "protected v0.1.4 tag is not annotated" }
 $protectedTagObjectSha = $protectedTagRef.object.sha
@@ -240,7 +264,68 @@ def powershell_ast_evidence(
     return json.loads(result.stdout)
 
 
+def assert_powershell_version_contract(
+    testcase: unittest.TestCase, text: str
+) -> None:
+    testcase.assertEqual(text.count(POWERSHELL_VERSION_PREREQUISITE), 1)
+    testcase.assertEqual(text.count(POWERSHELL_VERSION_GATE), 1)
+    testcase.assertIn(
+        "$PSNativeCommandUseErrorActionPreference = $true", text
+    )
+    native_preference = text.index(
+        "$PSNativeCommandUseErrorActionPreference = $true"
+    )
+    version_gate = text.index(POWERSHELL_VERSION_GATE)
+    first_native_command = min(text.index("git fetch"), text.index("gh api"))
+    testcase.assertLess(native_preference, version_gate)
+    testcase.assertLess(version_gate, first_native_command)
+
+
+def assert_evidence_retention_contract(
+    testcase: unittest.TestCase, text: str
+) -> None:
+    testcase.assertEqual(text.count(VERIFICATION_NOT_COMPLETE), 1)
+    testcase.assertEqual(text.count(VERIFICATION_COMPLETE), 1)
+    testcase.assertEqual(text.count(CLEANUP_SUCCESS_GATE), 1)
+    testcase.assertEqual(text.count(EVIDENCE_RETENTION_NOTICE), 1)
+
+    not_complete = text.index(VERIFICATION_NOT_COMPLETE)
+    verification_try = text.index("try {", not_complete)
+    complete = text.index(VERIFICATION_COMPLETE)
+    final_block = text.index("} finally {", complete)
+    cleanup = text.index(
+        "Remove-Item -LiteralPath $resolvedDownloadPath -Force", final_block
+    )
+    retention_notice = text.index(EVIDENCE_RETENTION_NOTICE, cleanup)
+    testcase.assertLess(not_complete, verification_try)
+    testcase.assertLess(verification_try, complete)
+    testcase.assertLess(complete, final_block)
+    testcase.assertLess(final_block, cleanup)
+    testcase.assertLess(cleanup, retention_notice)
+
+    completed_proofs = (
+        "$serverDigestChecks -ne 4",
+        "$payloadChecksumChecks -ne 3",
+        *PROVENANCE_COMMANDS,
+        *SPDX_COMMANDS,
+        *RELEASE_VERIFICATION_COMMANDS,
+    )
+    for proof in completed_proofs:
+        proof_position = text.find(proof, verification_try)
+        testcase.assertNotEqual(proof_position, -1)
+        testcase.assertLess(proof_position, complete)
+
+    successful_cleanup = text[final_block:cleanup]
+    testcase.assertIn("[IO.Path]::GetRelativePath", successful_cleanup)
+    testcase.assertIn(
+        "[IO.FileAttributes]::ReparsePoint", successful_cleanup
+    )
+    testcase.assertNotIn("throw", EVIDENCE_RETENTION_NOTICE)
+
+
 def assert_runbook_contract(testcase: unittest.TestCase, text: str) -> None:
+    assert_powershell_version_contract(testcase, text)
+    assert_evidence_retention_contract(testcase, text)
     testcase.assertIn("## Published v0.1.5 baseline", text)
     testcase.assertIn("## Future release procedure", text)
     testcase.assertNotIn("recovery version is `v0.1.5`", text)
@@ -402,7 +487,7 @@ def assert_runbook_contract(testcase: unittest.TestCase, text: str) -> None:
     )
     testcase.assertIn("$localTagCommitSha -cne $approvedSha", text)
 
-    testcase.assertIn("finally {\n    if (Test-Path -LiteralPath $downloadPath)", text)
+    testcase.assertIn(CLEANUP_SUCCESS_GATE, text)
     testcase.assertGreaterEqual(text.count("[IO.FileAttributes]::ReparsePoint"), 4)
     cleanup = text.index("Remove-Item -LiteralPath $resolvedDownloadPath -Force")
     final_block = text.rfind("finally {", 0, cleanup)
@@ -773,6 +858,97 @@ class ReleaseRunbookTests(unittest.TestCase):
             with self.subTest(mutation=name):
                 with self.assertRaises(AssertionError):
                     assert_runbook_contract(self, mutated)
+
+    def test_powershell_version_gate_is_exact_and_fail_closed(self) -> None:
+        text = RUNBOOK.read_text(encoding="utf-8")
+        candidate = text.replace(
+            "Use a clean checkout of remote `main` and one PowerShell 7 session.",
+            POWERSHELL_VERSION_PREREQUISITE,
+            1,
+        )
+        if POWERSHELL_VERSION_GATE not in candidate:
+            candidate = candidate.replace(
+                "$PSNativeCommandUseErrorActionPreference = $true\n",
+                "$PSNativeCommandUseErrorActionPreference = $true\n"
+                + POWERSHELL_VERSION_GATE
+                + "\n",
+                1,
+            )
+        assert_powershell_version_contract(self, candidate)
+
+        mutations = {
+            "version gate removed": candidate.replace(
+                POWERSHELL_VERSION_GATE + "\n", "", 1
+            ),
+            "PowerShell 7.3 accepted": candidate.replace(
+                '[version]"7.4"', '[version]"7.3"', 1
+            ),
+        }
+        for name, mutated in mutations.items():
+            with self.subTest(mutation=name):
+                with self.assertRaises(AssertionError):
+                    assert_powershell_version_contract(self, mutated)
+
+        assert_powershell_version_contract(self, text)
+
+    def test_failed_verification_retains_evidence(self) -> None:
+        text = RUNBOOK.read_text(encoding="utf-8")
+        candidate = text
+        if VERIFICATION_NOT_COMPLETE not in candidate:
+            candidate = candidate.replace(
+                "try {\n    gh release download $releaseTag --repo $repo --dir $resolvedDownloadPath",
+                VERIFICATION_NOT_COMPLETE
+                + "\ntry {\n    gh release download $releaseTag --repo $repo --dir $resolvedDownloadPath",
+                1,
+            )
+        if VERIFICATION_COMPLETE not in candidate:
+            last_proof = "    " + RELEASE_VERIFICATION_COMMANDS[-1]
+            candidate = candidate.replace(
+                last_proof + "\n} finally {",
+                last_proof + "\n    " + VERIFICATION_COMPLETE + "\n} finally {",
+                1,
+            )
+        candidate = candidate.replace(
+            "} finally {\n    if (Test-Path -LiteralPath $downloadPath) {",
+            CLEANUP_SUCCESS_GATE,
+            1,
+        )
+        if EVIDENCE_RETENTION_NOTICE not in candidate:
+            candidate = candidate.replace(
+                "        Remove-Item -LiteralPath $resolvedDownloadPath -Force -Recurse\n"
+                "    }\n}\n```",
+                "        Remove-Item -LiteralPath $resolvedDownloadPath -Force -Recurse\n"
+                + EVIDENCE_RETENTION_NOTICE
+                + "\n}\n```",
+                1,
+            )
+        assert_evidence_retention_contract(self, candidate)
+
+        unconditional_cleanup = candidate.replace(
+            CLEANUP_SUCCESS_GATE,
+            "} finally {\n    if (Test-Path -LiteralPath $downloadPath) {",
+            1,
+        )
+        last_proof = "    " + RELEASE_VERIFICATION_COMMANDS[-1]
+        premature_success = candidate.replace(
+            last_proof + "\n    " + VERIFICATION_COMPLETE,
+            "    " + VERIFICATION_COMPLETE + "\n" + last_proof,
+            1,
+        )
+        initially_authorised_cleanup = candidate.replace(
+            VERIFICATION_NOT_COMPLETE, VERIFICATION_COMPLETE, 1
+        )
+        mutations = {
+            "cleanup is unconditional": unconditional_cleanup,
+            "cleanup is authorised before the final proof": premature_success,
+            "cleanup starts authorised": initially_authorised_cleanup,
+        }
+        for name, mutated in mutations.items():
+            with self.subTest(mutation=name):
+                with self.assertRaises(AssertionError):
+                    assert_evidence_retention_contract(self, mutated)
+
+        assert_evidence_retention_contract(self, text)
 
     @unittest.skipUnless(POWERSHELL, "PowerShell 7 is required to test note normalisation")
     def test_note_normaliser_only_collapses_crlf(self) -> None:
