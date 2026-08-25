@@ -210,6 +210,11 @@ EVIDENCE_MARKERS = (
     "subcontractor-accounting-skills-0.1.5.zip        231784a4decc64760318ba1033f6da03a8938dbda6142d4351f60f510b8e6419",
 )
 
+EVIDENCE_COMPLETED_STATE = (
+    "At acceptance, GitHub reported `v0.1.5` as immutable, non-draft, "
+    "non-prerelease and the latest release."
+)
+
 
 def powershell_ast_evidence(
     testcase: unittest.TestCase, fences: list[str]
@@ -452,6 +457,7 @@ def assert_runbook_contract(testcase: unittest.TestCase, text: str) -> None:
 def assert_evidence_contract(testcase: unittest.TestCase, text: str) -> None:
     for marker in EVIDENCE_MARKERS:
         testcase.assertEqual(text.count(marker), 1)
+    testcase.assertEqual(text.count(EVIDENCE_COMPLETED_STATE), 1)
     testcase.assertIn("All four provenance attestations", text)
     testcase.assertIn("both SPDX v2.3 archive attestations", text)
     testcase.assertIn("`gh release verify` passed", text)
@@ -797,6 +803,21 @@ if ((ConvertTo-Lf "body") -ceq (ConvertTo-Lf "changed")) { exit 3 }
             with self.subTest(marker=marker.split()[0]):
                 replacement = marker[:-1] + ("0" if marker[-1] != "0" else "1")
                 mutated = text.replace(marker, replacement, 1)
+                with self.assertRaises(AssertionError):
+                    assert_evidence_contract(self, mutated)
+
+    def test_v015_evidence_rejects_completed_state_mutations(self) -> None:
+        text = EVIDENCE.read_text(encoding="utf-8")
+        self.assertIn(EVIDENCE_COMPLETED_STATE, text)
+        mutations = {
+            "mutable": ("as immutable", "as mutable"),
+            "draft": ("non-draft", "draft"),
+            "prerelease": ("non-prerelease", "prerelease"),
+            "not latest": ("the latest release", "not the latest release"),
+        }
+        for name, (old, new) in mutations.items():
+            with self.subTest(mutation=name):
+                mutated = text.replace(old, new, 1)
                 with self.assertRaises(AssertionError):
                     assert_evidence_contract(self, mutated)
 

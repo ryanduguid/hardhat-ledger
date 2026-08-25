@@ -1,4 +1,4 @@
-"""The release workflow is the shared archive policy plus the frozen-tag gate."""
+"""Test the exact-pinned shared skill-release policy and caller activation contract."""
 
 from pathlib import Path
 from copy import deepcopy
