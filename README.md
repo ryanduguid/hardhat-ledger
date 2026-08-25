@@ -152,15 +152,15 @@ Releases package all 10 discoverable skills and the marketplace metadata as
 deterministic UTC/LF source archives. Each release includes SHA-256 checksums,
 an SPDX 2.3 SBOM, and GitHub build and SBOM attestations. The marketplace
 deliberately has no pinned version that could make discovery stale. The tag
-workflow delegates to a full-commit-pinned shared release policy so consumer
-tests do not run with release authority.
+workflow delegates to a full-commit-pinned, dependency-aware shared skill-pack
+verifier and release policy, so consumer tests do not run with release
+authority and the privileged job starts from a fresh checkout.
 
 These remain review-schedule skills, not SG or TPAR calculators or final tax,
 accounting or legal advice. Use still requires current-source checks and
 qualified human review. See [RELEASING.md](RELEASING.md) for the operator gate
 and verification procedure, and
-[the v0.1.4 notes](docs/releases/v0.1.4.md) for the compatibility and safety
-repair.
+[the v0.1.5 notes](docs/releases/v0.1.5.md) for the release-process recovery.
 
 The ten skill names will later move into a broader Australian accounting pack
 only after the replacement passes the same install and safety gates. The

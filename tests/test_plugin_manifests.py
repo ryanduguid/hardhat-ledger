@@ -83,6 +83,13 @@ class PluginManifestTests(unittest.TestCase):
     def test_concrete_manifest_versions_match_the_release_version(self) -> None:
         version = (REPOSITORY / "VERSION").read_text(encoding="utf-8").strip()
         self.assertRegex(version, r"^[0-9]+\.[0-9]+\.[0-9]+$")
+        self.assertEqual(version, "0.1.5")
+        recovery_notes = (REPOSITORY / "docs" / "releases" / "v0.1.5.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("2f29bb51957888b1f427be44a7a0866ed4f4f5e5", recovery_notes)
+        self.assertIn("32839062910", recovery_notes)
+        self.assertIn("No skill or accounting content changed", recovery_notes)
         release_heading = (
             REPOSITORY / "RELEASE_NOTES.md"
         ).read_text(encoding="utf-8").splitlines()[0]
