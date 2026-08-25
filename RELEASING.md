@@ -1,115 +1,96 @@
 # Release procedure
 
-This repository uses an operator-gated release process. `v0.1.0` is a frozen,
-lightweight historical tag. Never move, delete, recreate or attach replacement
-assets to it. Corrections start at `v0.1.1` or a later new version.
+This repository uses an operator-gated release process. `v0.1.0` is frozen,
+and `v0.1.4` is an immutable failed tag. Never move, delete, recreate, rerun
+or attach replacement assets to either tag. Release run 32839062910 stopped
+before publication, so the recovery version is `v0.1.5`.
 
-The release workflow intentionally does **not** call GitHub's repository
-administration endpoint for immutable releases. Its `GITHUB_TOKEN` has release
-permissions, not repository-administration authority. An owner or administrator
-must enable immutability and read the setting back before creating the tag.
-The `immutable-releases` endpoint is therefore an operator control, not a
-workflow step.
+The caller uses the full-commit-pinned `release-skills.yml` adapter in
+`ryanduguid/release-policy`. It performs dependency-aware conformance in a
+read-only job, then `publish-archives.yml` performs attestation and publication
+from a fresh checkout. Do not build, upload or publish assets by hand.
 
 ## 1. Verify the exact release commit
 
-Merge the reviewed release pull request, then work from a clean checkout of the
-remote default branch. Confirm that the proposed commit is the exact current
-`main` commit and that Verify and CodeQL/default scanning passed for that SHA.
-Do not infer release readiness from pull-request checks on a different commit.
+Merge the reviewed release pull request, then work from a clean checkout of
+the remote default branch. Confirm that the proposed commit is exactly current
+`main`, that Verify, shared conformance and CodeQL passed for that SHA, and that
+both workflow calls are pinned to
+`f180faa567e95669224211d0282b3b437fe79ea9`.
 
-Run the local gates against that exact commit:
+Run the local gates in this order:
 
 ```powershell
-python -m pip install --disable-pip-version-check --no-deps --requirement requirements-test.txt
-python -m unittest discover -s tests -v
-python tests/verify_skills_cli.py
+python -m pip install --isolated --disable-pip-version-check --no-input --no-deps --requirement requirements-test.txt
+python -B -m unittest discover -s tests -v
 python scripts/validate_validation.py
+python tests/verify_skills_cli.py
 ```
 
-Release archives are built by the reusable `release-archive.yml` workflow in
-`ryanduguid/release-policy`, pinned from `.github/workflows/release.yml`. Do
-not build or upload assets by hand.
+Before a tag is considered, prove the failed-tag invariant and that the
+recovery version is unused. Both release API calls below must return HTTP 404:
+
+```powershell
+git fetch origin main --tags
+if ((git rev-parse 'v0.1.4^{commit}') -ne '2f29bb51957888b1f427be44a7a0866ed4f4f5e5') { throw 'v0.1.4 changed' }
+gh api repos/ryanduguid/hardhat-ledger/releases/tags/v0.1.4
+if ($LASTEXITCODE -eq 0) { throw 'v0.1.4 release exists' }
+if (git ls-remote --tags origin refs/tags/v0.1.5) { throw 'v0.1.5 tag exists' }
+gh api repos/ryanduguid/hardhat-ledger/releases/tags/v0.1.5
+if ($LASTEXITCODE -eq 0) { throw 'v0.1.5 release exists' }
+```
 
 ## 2. Enable and read back immutable releases
 
-An authenticated repository owner or administrator must enable **Immutable
-releases** in Settings > General > Releases, or make the equivalent API call:
+An authenticated owner or administrator must enable Immutable releases in
+Settings before creating the tag, then read the setting back. The workflow has
+release permissions, not repository-administration authority.
 
 ```powershell
-gh api --method PUT `
-  -H "X-GitHub-Api-Version: 2026-03-10" `
-  repos/ryanduguid/hardhat-ledger/immutable-releases
+gh api --method PUT -H "X-GitHub-Api-Version: 2026-03-10" repos/ryanduguid/hardhat-ledger/immutable-releases
+gh api -H "X-GitHub-Api-Version: 2026-03-10" repos/ryanduguid/hardhat-ledger/immutable-releases --jq '{enabled, enforced_by_owner}'
 ```
 
-Read the setting back with the same administrator identity:
-
-```powershell
-gh api `
-  -H "X-GitHub-Api-Version: 2026-03-10" `
-  repos/ryanduguid/hardhat-ledger/immutable-releases `
-  --jq '{enabled, enforced_by_owner}'
-```
-
-Stop unless `enabled` is `true`. This is a pre-tag operator gate. Do not assume
-that a submitted setting change succeeded, and do not create the tag first. A
-`404` readback means immutability is not enabled and is also a stop condition.
-GitHub documents both the
-[repository setting](https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/establish-provenance-and-integrity/prevent-release-changes)
-and the
-[administration API](https://docs.github.com/en/rest/repos/repos?apiVersion=2026-03-10#enable-immutable-releases).
+Stop unless `enabled` is `true`.
 
 ## 3. Create one annotated tag at exact current main
 
-Verify that neither the new tag nor a release with the same name already exists.
-Resolve `origin/main` again immediately before tagging, then create an annotated
-tag at that exact SHA. For `v0.1.1`:
+Only after explicit approval for the exact merged SHA, create and push one
+annotated `v0.1.5` tag:
 
 ```powershell
 git fetch origin main --tags
 $releaseSha = git rev-parse origin/main
 $apiMainSha = gh api repos/ryanduguid/hardhat-ledger/git/ref/heads/main --jq '.object.sha'
-if ($releaseSha -ne $apiMainSha) { throw "origin/main does not match the GitHub API" }
-gh api repos/ryanduguid/hardhat-ledger/commits/$releaseSha/check-runs --jq '.check_runs[] | [.name, .status, .conclusion] | @tsv'
-git tag -a v0.1.1 $releaseSha -m "v0.1.1"
-git cat-file -t refs/tags/v0.1.1
-$tagSha = git rev-parse 'refs/tags/v0.1.1^{commit}'
-if ($tagSha -ne $releaseSha) { throw "annotated tag target does not match main" }
-git push origin refs/tags/v0.1.1
+if ($releaseSha -ne $apiMainSha) { throw 'origin/main does not match the GitHub API' }
+git tag -a v0.1.5 $releaseSha -m 'v0.1.5'
+if ((git cat-file -t refs/tags/v0.1.5) -ne 'tag') { throw 'v0.1.5 is not annotated' }
+if ((git rev-parse 'refs/tags/v0.1.5^{commit}') -ne $releaseSha) { throw 'tag target mismatch' }
+git push origin refs/tags/v0.1.5
 ```
 
-`git cat-file` must return `tag`, and the peeled commit must equal both
-`origin/main` and the API result. Every required check run in the listing must be
-completed successfully for that exact SHA. Never force-push a release tag. The
-tag push is the explicit operator authorisation for the workflow to build,
-attest and publish the release.
+Never force-push a release tag. If the release workflow fails, preserve its
+candidate or draft evidence and seek a new decision rather than rerunning,
+editing the tag or uploading assets.
 
 ## 4. Verify the published release
 
-The workflow reruns the tests, builds deterministic UTC/LF ZIP and tar archives,
-creates `SHA256SUMS` and an SPDX 2.3 SBOM, creates GitHub build and SBOM
-attestations, uploads the exact four assets to a draft, verifies that draft, and
-only then publishes it. With the operator precondition satisfied, GitHub locks
-the tag and assets at publication.
+Confirm that `v0.1.5` is immutable, non-draft and latest; that its notes match
+the committed `RELEASE_NOTES.md`; and that it has exactly these assets:
 
-Check all four assets, their checksums, the GitHub attestations and the immutable
-flag:
-
-```powershell
-gh release view v0.1.1 --json tagName,isDraft,isImmutable,assets
-gh release download v0.1.1 --dir dist-verify
-Push-Location dist-verify
-Get-FileHash -Algorithm SHA256 subcontractor-accounting-skills-v0.1.1.zip
-Get-FileHash -Algorithm SHA256 subcontractor-accounting-skills-v0.1.1.tar.gz
-Get-FileHash -Algorithm SHA256 subcontractor-accounting-skills-v0.1.1.spdx.json
-Pop-Location
-gh attestation verify dist-verify/subcontractor-accounting-skills-v0.1.1.zip --repo ryanduguid/hardhat-ledger
-gh attestation verify dist-verify/subcontractor-accounting-skills-v0.1.1.tar.gz --repo ryanduguid/hardhat-ledger
-gh attestation verify dist-verify/subcontractor-accounting-skills-v0.1.1.zip --repo ryanduguid/hardhat-ledger --predicate-type https://spdx.dev/Document/v2.3
-gh release verify v0.1.1 --repo ryanduguid/hardhat-ledger
-gh api -H "X-GitHub-Api-Version: 2026-03-10" repos/ryanduguid/hardhat-ledger/releases/tags/v0.1.1 --jq '{draft, immutable}'
+```text
+SHA256SUMS
+subcontractor-accounting-skills-0.1.5.spdx.json
+subcontractor-accounting-skills-0.1.5.tar.gz
+subcontractor-accounting-skills-0.1.5.zip
 ```
 
-Compare the three calculated hashes with `SHA256SUMS`. Stop and investigate any
-mismatch, missing attestation, mutable release or unexpected asset. Do not
-replace an immutable release; correct it with a new reviewed version.
+Download the assets, compare local and server SHA-256 digests with
+`SHA256SUMS`, and verify all four provenance attestations and both archive SPDX
+attestations. The signer must be
+`ryanduguid/release-policy/.github/workflows/publish-archives.yml` at the exact
+pinned policy SHA. Re-prove that `v0.1.4` still peels to
+`2f29bb51957888b1f427be44a7a0866ed4f4f5e5` and has no release.
+
+Do not replace an immutable release. Correct any later issue with a new
+reviewed version.
