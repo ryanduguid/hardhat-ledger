@@ -1,5 +1,6 @@
 from pathlib import Path
 import copy
+import json
 import re
 import shutil
 import subprocess
@@ -59,10 +60,129 @@ if ($postApprovalReleaseExit -eq 0 -or "$postApprovalReleaseError" -notmatch 'HT
     throw "post-approval release absence was not proved"
 }"""
 
-POST_APPROVAL_TAG_ABSENCE_GATE = """$postApprovalTag = git ls-remote --tags origin "refs/tags/$releaseTag"
-if ($postApprovalTag) {
+POST_APPROVAL_TAG_ABSENCE_IF = """if ($postApprovalTag) {
     throw "candidate tag appeared after approval"
 }"""
+
+POST_APPROVAL_TAG_QUERY = (
+    '$postApprovalTag = git ls-remote --tags origin "refs/tags/$releaseTag"'
+)
+
+POWERSHELL_AST_EVIDENCE = r'''$ErrorActionPreference = "Stop"
+$sources = @([Console]::In.ReadToEnd() | ConvertFrom-Json)
+$assignments = [Collections.Generic.List[object]]::new()
+$commands = [Collections.Generic.List[object]]::new()
+$conditions = [Collections.Generic.List[object]]::new()
+$setVariableTargets = [Collections.Generic.List[object]]::new()
+
+for ($fence = 0; $fence -lt $sources.Count; $fence++) {
+    $tokens = $null
+    $errors = $null
+    $ast = [Management.Automation.Language.Parser]::ParseInput(
+        $sources[$fence], [ref]$tokens, [ref]$errors
+    )
+    if ($errors.Count) {
+        throw "PowerShell fence $($fence + 1) did not parse"
+    }
+
+    $assignmentNodes = $ast.FindAll({
+        param($node)
+        $node -is [Management.Automation.Language.AssignmentStatementAst]
+    }, $true)
+    foreach ($node in $assignmentNodes) {
+        $name = $null
+        if ($node.Left -is [Management.Automation.Language.VariableExpressionAst]) {
+            $name = $node.Left.VariablePath.UserPath
+        }
+        $assignments.Add([pscustomobject]@{
+            fence = $fence
+            name = $name
+            text = $node.Extent.Text
+            start = $node.Extent.StartOffset
+            end = $node.Extent.EndOffset
+        })
+    }
+
+    $commandNodes = $ast.FindAll({
+        param($node)
+        $node -is [Management.Automation.Language.CommandAst]
+    }, $true)
+    foreach ($node in $commandNodes) {
+        $commandName = $node.GetCommandName()
+        $commands.Add([pscustomobject]@{
+            fence = $fence
+            name = $commandName
+            text = $node.Extent.Text
+            start = $node.Extent.StartOffset
+            end = $node.Extent.EndOffset
+        })
+
+        if ($commandName -ieq "Set-Variable") {
+            $target = $null
+            for ($index = 1; $index -lt $node.CommandElements.Count; $index++) {
+                $element = $node.CommandElements[$index]
+                if (
+                    $element -is [Management.Automation.Language.CommandParameterAst] -and
+                    $element.ParameterName -ieq "Name"
+                ) {
+                    if ($null -ne $element.Argument) {
+                        $target = $element.Argument.Extent.Text.Trim([char[]]@("'", '"'))
+                    } elseif ($index + 1 -lt $node.CommandElements.Count) {
+                        $targetElement = $node.CommandElements[$index + 1]
+                        if (
+                            $targetElement -is
+                            [Management.Automation.Language.StringConstantExpressionAst]
+                        ) {
+                            $target = $targetElement.Value
+                        } else {
+                            $target = $targetElement.Extent.Text.Trim([char[]]@("'", '"'))
+                        }
+                    }
+                    break
+                }
+            }
+            if (
+                $null -eq $target -and
+                $node.CommandElements.Count -gt 1 -and
+                $node.CommandElements[1] -is
+                [Management.Automation.Language.StringConstantExpressionAst]
+            ) {
+                $target = $node.CommandElements[1].Value
+            }
+            $setVariableTargets.Add([pscustomobject]@{
+                fence = $fence
+                target = $target
+                text = $node.Extent.Text
+                start = $node.Extent.StartOffset
+                end = $node.Extent.EndOffset
+            })
+        }
+    }
+
+    $ifNodes = $ast.FindAll({
+        param($node)
+        $node -is [Management.Automation.Language.IfStatementAst]
+    }, $true)
+    foreach ($node in $ifNodes) {
+        foreach ($clause in $node.Clauses) {
+            $conditions.Add([pscustomobject]@{
+                fence = $fence
+                condition = $clause.Item1.Extent.Text
+                text = $node.Extent.Text
+                start = $node.Extent.StartOffset
+                end = $node.Extent.EndOffset
+            })
+        }
+    }
+}
+
+[pscustomobject]@{
+    assignments = [object[]]$assignments
+    commands = [object[]]$commands
+    conditions = [object[]]$conditions
+    setVariableTargets = [object[]]$setVariableTargets
+} | ConvertTo-Json -Depth 5 -Compress
+'''
 
 NOTE_NORMALISER = """function ConvertTo-Lf([string]$Text) {
     return $Text.Replace("`r`n", "`n")
@@ -121,6 +241,30 @@ EVIDENCE_MARKERS = (
 )
 
 
+def powershell_ast_evidence(
+    testcase: unittest.TestCase, fences: list[str]
+) -> dict[str, list[dict[str, object]]]:
+    testcase.assertIsNotNone(
+        POWERSHELL, "PowerShell 7 is required to verify executable release statements"
+    )
+    result = subprocess.run(
+        [
+            POWERSHELL,
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            POWERSHELL_AST_EVIDENCE,
+        ],
+        input=json.dumps(fences),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    testcase.assertEqual(result.returncode, 0, result.stderr)
+    return json.loads(result.stdout)
+
+
 def assert_runbook_contract(testcase: unittest.TestCase, text: str) -> None:
     testcase.assertIn("## Published v0.1.5 baseline", text)
     testcase.assertIn("## Future release procedure", text)
@@ -140,6 +284,7 @@ def assert_runbook_contract(testcase: unittest.TestCase, text: str) -> None:
     fences = [match["code"] for match in FENCE.finditer(text)]
     testcase.assertGreaterEqual(len(fences), 4)
     testcase.assertTrue(fences[0].startswith(INITIAL_FENCE))
+    ast = powershell_ast_evidence(testcase, fences)
     native_fail_closed = text.index("$PSNativeCommandUseErrorActionPreference = $true")
     first_native_command = min(text.index("git fetch"), text.index("gh api"))
     testcase.assertLess(native_fail_closed, first_native_command)
@@ -182,19 +327,83 @@ def assert_runbook_contract(testcase: unittest.TestCase, text: str) -> None:
         text,
     )
     testcase.assertIn("$postApprovalHeadSha -cne $approvedSha", text)
-    testcase.assertIn('$postApprovalTag = git ls-remote --tags origin "refs/tags/$releaseTag"', text)
     approval = text.index("$confirmedApprovedSha -cne $approvedSha")
     post_approval_gate = text.index("$postApprovalImmutableReleaseState")
     tag_create = text.index("git tag -a $releaseTag")
     tag_push = text.index('git push origin "refs/tags/$releaseTag"')
-    post_approval_block = text[approval:tag_create]
-    testcase.assertEqual(text.count("git fetch origin main --tags"), 2)
-    testcase.assertEqual(post_approval_block.count("git fetch origin main --tags"), 1)
-    post_approval_fetch = text.index("git fetch origin main --tags", approval)
     testcase.assertLess(approval, post_approval_gate)
-    testcase.assertLess(approval, post_approval_fetch)
-    testcase.assertLess(post_approval_fetch, post_approval_gate)
-    testcase.assertIn(POST_APPROVAL_TAG_ABSENCE_GATE, post_approval_block)
+
+    approval_conditions = [
+        condition
+        for condition in ast["conditions"]
+        if condition["condition"] == "$confirmedApprovedSha -cne $approvedSha"
+    ]
+    testcase.assertEqual(len(approval_conditions), 1)
+    approval_condition = approval_conditions[0]
+    approval_fence = approval_condition["fence"]
+
+    fetch_commands = [
+        command
+        for command in ast["commands"]
+        if command["name"] is not None
+        and command["name"].casefold() == "git"
+        and command["text"] == "git fetch origin main --tags"
+    ]
+    testcase.assertEqual(len(fetch_commands), 2)
+    post_approval_fetches = [
+        command for command in fetch_commands if command["fence"] == approval_fence
+    ]
+    testcase.assertEqual(len(post_approval_fetches), 1)
+    post_approval_fetch = post_approval_fetches[0]
+
+    immutable_assignments = [
+        assignment
+        for assignment in ast["assignments"]
+        if assignment["fence"] == approval_fence
+        and assignment["name"] is not None
+        and assignment["name"].casefold()
+        == "postapprovalimmutablereleasestate"
+    ]
+    testcase.assertEqual(len(immutable_assignments), 1)
+
+    tag_queries = [
+        assignment
+        for assignment in ast["assignments"]
+        if assignment["fence"] == approval_fence
+        and assignment["text"] == POST_APPROVAL_TAG_QUERY
+    ]
+    testcase.assertEqual(len(tag_queries), 1)
+    tag_query = tag_queries[0]
+
+    tag_rejections = [
+        condition
+        for condition in ast["conditions"]
+        if condition["fence"] == approval_fence
+        and condition["condition"] == "$postApprovalTag"
+        and condition["text"] == POST_APPROVAL_TAG_ABSENCE_IF
+    ]
+    testcase.assertEqual(len(tag_rejections), 1)
+    tag_rejection = tag_rejections[0]
+
+    tag_create_commands = [
+        command
+        for command in ast["commands"]
+        if command["fence"] == approval_fence
+        and command["name"] is not None
+        and command["name"].casefold() == "git"
+        and command["text"]
+        == "git tag -a $releaseTag $approvedSha -m $releaseTag"
+    ]
+    testcase.assertEqual(len(tag_create_commands), 1)
+    tag_create_command = tag_create_commands[0]
+
+    testcase.assertLess(approval_condition["end"], post_approval_fetch["start"])
+    testcase.assertLess(
+        post_approval_fetch["end"], immutable_assignments[0]["start"]
+    )
+    testcase.assertLess(approval_condition["end"], tag_query["start"])
+    testcase.assertLess(tag_query["end"], tag_rejection["start"])
+    testcase.assertLess(tag_rejection["end"], tag_create_command["start"])
     post_approval_markers = (
         "$postApprovalImmutableReleaseState",
         "$postApprovalOriginMainSha = git rev-parse origin/main",
@@ -241,8 +450,23 @@ def assert_runbook_contract(testcase: unittest.TestCase, text: str) -> None:
         'if (-not ($checksumLines -ccontains "$payloadDigest  $payloadName"))',
         text,
     )
-    testcase.assertEqual(len(re.findall(r"\$signerWorkflow\s*=", text)), 1)
-    testcase.assertEqual(text.count(SIGNER_WORKFLOW_ASSIGNMENT), 1)
+    signer_assignments = [
+        assignment
+        for assignment in ast["assignments"]
+        if assignment["name"] is not None
+        and assignment["name"].casefold() == "signerworkflow"
+    ]
+    signer_set_variables = [
+        command
+        for command in ast["setVariableTargets"]
+        if command["target"] is not None
+        and command["target"].casefold() == "signerworkflow"
+    ]
+    testcase.assertEqual(
+        [assignment["text"] for assignment in signer_assignments],
+        [SIGNER_WORKFLOW_ASSIGNMENT],
+    )
+    testcase.assertEqual(signer_set_variables, [])
 
     attestation_lines = [
         line.strip()
@@ -474,6 +698,53 @@ class ReleaseRunbookTests(unittest.TestCase):
             "candidate tag absence predicate is inverted": (
                 inverted_candidate_tag_predicate
             ),
+        }
+        for name, mutated in mutations.items():
+            with self.subTest(mutation=name):
+                with self.assertRaises(AssertionError):
+                    assert_runbook_contract(self, mutated)
+
+    def test_runbook_contract_rejects_parser_bypasses(self) -> None:
+        text = RUNBOOK.read_text(encoding="utf-8")
+        assert_runbook_contract(self, text)
+
+        first_attestation = "    " + PROVENANCE_COMMANDS[0]
+        self.assertIn(first_attestation, text)
+        braced_signer_reassignment = text.replace(
+            first_attestation,
+            '    ${signerWorkflow} = "unsafe/example.yml"\n' + first_attestation,
+            1,
+        )
+        command_signer_reassignment = text.replace(
+            first_attestation,
+            '    Set-Variable -Name signerWorkflow -Value "unsafe/example.yml"\n'
+            + first_attestation,
+            1,
+        )
+
+        approval = text.index("$confirmedApprovedSha -cne $approvedSha")
+        pre_approval = text[:approval]
+        post_approval = text[approval:]
+        fetch = "git fetch origin main --tags"
+        self.assertIn(fetch, post_approval)
+        commented_post_approval_fetch = pre_approval + post_approval.replace(
+            fetch, "# " + fetch, 1
+        )
+
+        tag_query = (
+            '$postApprovalTag = git ls-remote --tags origin '
+            '"refs/tags/$releaseTag"'
+        )
+        self.assertIn(tag_query, post_approval)
+        commented_candidate_tag_query = pre_approval + post_approval.replace(
+            tag_query, "# " + tag_query, 1
+        )
+
+        mutations = {
+            "braced signer reassignment": braced_signer_reassignment,
+            "Set-Variable signer reassignment": command_signer_reassignment,
+            "commented post-approval fetch": commented_post_approval_fetch,
+            "commented candidate tag query": commented_candidate_tag_query,
         }
         for name, mutated in mutations.items():
             with self.subTest(mutation=name):
