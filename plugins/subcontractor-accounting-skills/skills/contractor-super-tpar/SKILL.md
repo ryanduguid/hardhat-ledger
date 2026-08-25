@@ -53,6 +53,14 @@ Build a payer-side review schedule for subcontractor spend. For superannuation, 
 - Every TPAR due date names the s 396-55 legislative instrument or s 405-10(4) written notice that changes the applicable statutory default, plus any s 388-55 deferral that changes the approved-form lodgment time
 - Every rate, threshold and lodgment time used is recorded with its source and the date checked
 
+## Portable safety boundary
+
+- Current mutable facts must come from a current authoritative primary source; if the source is unavailable, leave the fact blank or explicitly unverified and do not rely on it.
+- Real client data must stay in a firm-approved environment, outside repositories and unapproved cloud prompts, with unnecessary identifiers excluded.
+- Write client output only to a configured firm-approved secure path; if none is supplied, stop and ask, create no fallback, and do not edit `.gitignore`.
+- Do not lodge, make declarations, communicate with a client or regulator, pay, post journals or lock records; prepare the hand-off for an authorised human.
+- Legal, tax and accounting judgement belongs to the authorised reviewer, partner, lawyer or registered agent.
+
 ## Boundaries
 
 - Do not conclude that a worker is or is not an employee at law. That is a legal characterisation for a qualified person. This skill assembles the contractual facts, the valuation evidence and the statutory elements, records the position they point to, and stops there.

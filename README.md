@@ -4,7 +4,7 @@
 +----------------------------------------------------------------------+
 |                            hardhat-ledger                            |
 +----------------------------------------------------------------------+
-|           Claude Code skills for AU subcontractor ledgers            |
+|        Cross-runtime skills for AU subcontractor ledgers             |
 +----------------------------------+-----------------------------------+
 | DR  what it gives you            | CR  what it needs                 |
 +----------------------------------+-----------------------------------+
@@ -20,9 +20,10 @@ Claude Code skills for Australian subcontractor accounting: progress claims,
 retentions, work in progress and over/under-billing, contract cost tracking, and
 the regimes a mining-services or earthmoving subcontractor lives with.
 
-Compatibility: the Claude plugin remains `subcontractor-accounting-skills` in
-the `ryanduguid-contracting` marketplace, and release asset filenames retain
-that identifier.
+Compatibility: the plugin remains `subcontractor-accounting-skills` in the
+`ryanduguid-contracting` marketplace for Claude and Codex, and release asset
+filenames retain that identifier. Both runtimes use the same canonical plugin
+payload under `plugins/subcontractor-accounting-skills/`.
 
 Written independently, from scratch, in my own time and on my own equipment.
 Each skill encodes the *workflow* - the steps, the tie-outs, the exceptions to
@@ -54,6 +55,13 @@ together and update with the repo:
 /plugin install subcontractor-accounting-skills@ryanduguid-contracting
 ```
 
+### Codex plugin
+
+```bash
+codex plugin marketplace add ryanduguid/hardhat-ledger
+codex plugin add subcontractor-accounting-skills@ryanduguid-contracting
+```
+
 ### Any agent, via the skills CLI
 
 ```bash
@@ -68,7 +76,7 @@ one agent, and `-l` to list the skills without installing anything.
 ```bash
 git clone https://github.com/ryanduguid/hardhat-ledger
 mkdir -p ~/.claude/skills
-cp -r hardhat-ledger/.claude/skills/* ~/.claude/skills/
+cp -r hardhat-ledger/plugins/subcontractor-accounting-skills/skills/* ~/.claude/skills/
 ```
 
 PowerShell:
@@ -76,7 +84,7 @@ PowerShell:
 ```powershell
 git clone https://github.com/ryanduguid/hardhat-ledger
 New-Item -ItemType Directory -Force "$HOME/.claude/skills"
-Copy-Item -Recurse hardhat-ledger/.claude/skills/* "$HOME/.claude/skills/"
+Copy-Item -Recurse hardhat-ledger/plugins/subcontractor-accounting-skills/skills/* "$HOME/.claude/skills/"
 ```
 
 ## Skills
@@ -140,17 +148,25 @@ skill is used.
 
 ## Releases and provenance
 
-Starting with the planned `v0.1.1` process, new releases package all 10
-discoverable skills and the marketplace metadata as deterministic UTC/LF source
-archives. Each such release includes SHA-256 checksums, an SPDX 2.3 SBOM, and
-GitHub build and SBOM attestations. The marketplace deliberately has no pinned
-version that could make discovery stale.
+Releases package all 10 discoverable skills and the marketplace metadata as
+deterministic UTC/LF source archives. Each release includes SHA-256 checksums,
+an SPDX 2.3 SBOM, and GitHub build and SBOM attestations. The marketplace
+deliberately has no pinned version that could make discovery stale. The tag
+workflow delegates to a full-commit-pinned shared release policy so consumer
+tests do not run with release authority.
 
 These remain review-schedule skills, not SG or TPAR calculators or final tax,
 accounting or legal advice. Use still requires current-source checks and
 qualified human review. See [RELEASING.md](RELEASING.md) for the operator gate
 and verification procedure, and
-[the v0.1.1 notes](docs/releases/v0.1.1.md) for the release boundary.
+[the v0.1.4 notes](docs/releases/v0.1.4.md) for the compatibility and safety
+repair.
+
+The ten skill names will later move into a broader Australian accounting pack
+only after the replacement passes the same install and safety gates. The
+[consolidation transition](docs/consolidation-transition.md) records the
+compatibility, rollback and owner-approval conditions. This release does not
+deprecate the repository.
 
 ## Verification
 
@@ -163,9 +179,9 @@ python -m unittest discover -s tests -v
 python scripts/validate_validation.py
 ```
 
-The fabricated cards in `validation/` and the shared rule in
-`.claude/rules/accounting-safety.md` are the australian-accounting-skills-style gates
-for this pack. See [DISCLAIMER.md](DISCLAIMER.md).
+The nine fabricated cards in `validation/`, the portable boundary inside every
+standalone skill and the shared rule in `.claude/rules/accounting-safety.md`
+are the safety gates for this pack. See [DISCLAIMER.md](DISCLAIMER.md).
 
 ## Contributing
 

@@ -1,6 +1,6 @@
 ---
 name: coal-lsl-levy
-description: "Use when an employer has workers on or about a black coal mine site and must handle Coal LSL: testing which employees are eligible, building eligible wages, lodging the monthly levy return and payment, claiming reimbursement for long service leave paid, and reconciling the levy to payroll."
+description: "Use when an employer has workers on or about a black coal mine site and must handle Coal LSL: testing which employees are eligible, building eligible wages, preparing the monthly levy return and payment hand-off, claiming reimbursement for long service leave paid, and reconciling the levy to payroll."
 ---
 
 # Coal LSL Levy
@@ -28,7 +28,7 @@ Ask for these if not provided (see `contracting-exports` for pulling and validat
 4. **Build eligible wages under s 3B of the Payroll Levy Collection Act 1992.** Include base or ordinary pay and incentive payments and bonuses paid at least monthly. Exclude overtime, penalty rates, shift loading, third party workers compensation and income protection, and any bonus paid less often than monthly. Apply the correct method for the category: non casual with a base rate uses the greater of the two prescribed monthly formulas, salaried uses annual salary including at least monthly incentives, casual follows the current casual method in Coal LSL's eligible wages guidance note. This base is not superannuation OTE and not state payroll tax wages, so never reuse a figure from `contractor-super-tpar` or `payroll-tax-contractors`.
 5. **Look up the rate, then compute.** Take the prescribed percentage from Part 2 of the Payroll Levy Regulations 2018, made under ss 5 and 8(1) of the Payroll Levy Act 1992, and cite the compilation and date read. Levy per employee must equal eligible wages times that percentage.
 6. **Complete the Levy Advice.** Per employee per month: LSL number, name and date of birth as per ID, work status, hours worked, eligible wages, levy paid. Part time and casual hours are always entered; entries at or above the form's stated hours ceiling need justification. Ceasing employees, casuals paid nothing that month, and employees on unpaid leave or workers compensation stay on the return with the relevant status code and zero hours.
-7. **Lodge and pay inside the statutory window.** The Payroll Levy Collection Act 1992 sets the deadline by reference to the end of the month of employment; read the current period and payment channel from Coal LSL's levy returns and payments page. Do not set a fixed recurring payment, because the monthly figure moves with incentives and bonuses. Late payment attracts additional levy under s 7, accruing daily, so confirm the current formula at the source.
+7. **Prepare and diarise the authorised-human lodgment and payment hand-off.** The Payroll Levy Collection Act 1992 sets the deadline by reference to the end of the month of employment; read the current period and payment channel from Coal LSL's levy returns and payments page, then record them for the authorised person. Do not set a fixed recurring payment, because the monthly figure moves with incentives and bonuses. Late payment attracts additional levy under s 7, accruing daily, so confirm the current formula at the source.
 8. **Correct errors by Adjustment Levy Advice.** Underpayments are paid into the Fund and overpayments are refunded. A refund does not offset other levy owed, so do not net them.
 9. **Claim reimbursement in sequence.** Leave application approved, employee actually paid, then claim under Part 7 of the Administration Act (s 44, with the Employer Reimbursement Rules made under s 45). The claim is long service leave hours paid times eligible wages per hour, capped at the amount actually paid to the employee. Which rules apply turns on the date Coal LSL receives the claim, not the date the leave was taken, so confirm the applicable rule set. Flag likely shortfalls where service recognised was not eligible employee service, the leave was already reimbursed, or leave was paid at an over award or all inclusive rate.
 10. **Reconcile to payroll and the ledger.** Eligible wages per the return must reconcile to payroll gross with a documented bridge for each exclusion; hours per the return must agree to payroll hours; levy paid must agree to bank; reimbursements received must agree to the amounts claimed and to the ledger.
@@ -42,6 +42,14 @@ Ask for these if not provided (see `contracting-exports` for pulling and validat
 - Every employee required on the return is present, including zero hours and ceasing cases
 - Levy paid agrees to bank; reimbursements received agree to claims lodged and to the ledger
 - Legislation currency confirmed: the Coal Mining Industry (Long Service Leave) Legislation Amendment Act 2026 amends both Acts, and any Unpaid Levy Payment Arrangement terms, opt in period and revised additional levy rate must be read from Coal LSL or legislation.gov.au this session, never quoted from memory or from older material
+
+## Portable safety boundary
+
+- Current mutable facts must come from a current authoritative primary source; if the source is unavailable, leave the fact blank or explicitly unverified and do not rely on it.
+- Real client data must stay in a firm-approved environment, outside repositories and unapproved cloud prompts, with unnecessary identifiers excluded.
+- Write client output only to a configured firm-approved secure path; if none is supplied, stop and ask, create no fallback, and do not edit `.gitignore`.
+- Do not lodge, make declarations, communicate with a client or regulator, pay, post journals or lock records; prepare the hand-off for an authorised human.
+- Legal, tax and accounting judgement belongs to the authorised reviewer, partner, lawyer or registered agent.
 
 ## Boundaries
 
