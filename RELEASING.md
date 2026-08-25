@@ -146,6 +146,47 @@ $confirmedApprovedSha = Read-Host "Re-enter the separately approved full commit 
 if ($confirmedApprovedSha -cne $approvedSha) {
     throw "the separate approval does not match approvedSha"
 }
+
+git fetch origin main --tags
+$postApprovalImmutableReleaseState = gh api `
+    -H "X-GitHub-Api-Version: 2026-03-10" `
+    "repos/$repo/immutable-releases" |
+    ConvertFrom-Json
+if (-not $postApprovalImmutableReleaseState.enabled) {
+    throw "immutable releases were disabled after approval"
+}
+$postApprovalOriginMainSha = git rev-parse origin/main
+$postApprovalApiMainSha = gh api "repos/$repo/git/ref/heads/main" --jq '.object.sha'
+$postApprovalHeadSha = git rev-parse HEAD
+if (
+    $postApprovalOriginMainSha -cne $approvedSha -or
+    $postApprovalApiMainSha -cne $approvedSha
+) {
+    throw "remote main changed after approval"
+}
+if ($postApprovalHeadSha -cne $approvedSha) {
+    throw "local HEAD changed after approval"
+}
+$postApprovalStatus = git status --porcelain
+if ($postApprovalStatus) {
+    throw "the release checkout changed after approval"
+}
+$postApprovalTag = git ls-remote --tags origin "refs/tags/$releaseTag"
+if ($postApprovalTag) {
+    throw "candidate tag appeared after approval"
+}
+$nativeErrorPreference = $PSNativeCommandUseErrorActionPreference
+try {
+    $PSNativeCommandUseErrorActionPreference = $false
+    $postApprovalReleaseError = gh api "repos/$repo/releases/tags/$releaseTag" 2>&1
+    $postApprovalReleaseExit = $LASTEXITCODE
+} finally {
+    $PSNativeCommandUseErrorActionPreference = $nativeErrorPreference
+}
+if ($postApprovalReleaseExit -eq 0 -or "$postApprovalReleaseError" -notmatch 'HTTP 404') {
+    throw "post-approval release absence was not proved"
+}
+
 git tag -a $releaseTag $approvedSha -m $releaseTag
 if ((git cat-file -t "refs/tags/$releaseTag") -cne "tag") {
     throw "release tag is not annotated"
@@ -172,8 +213,13 @@ if ($release.isDraft -or $release.isPrerelease -or -not $release.isImmutable) {
 if ([int64]$release.databaseId -ne [int64]$latest.id -or $release.tagName -cne $latest.tag_name) {
     throw "release is not the latest published release"
 }
+function ConvertTo-Lf([string]$Text) {
+    return $Text.Replace("`r`n", "`n")
+}
 $expectedNotes = Get-Content -LiteralPath RELEASE_NOTES.md -Raw
-if ($release.body -cne $expectedNotes) {
+$releaseBodyLf = ConvertTo-Lf $release.body
+$expectedNotesLf = ConvertTo-Lf $expectedNotes
+if ($releaseBodyLf -cne $expectedNotesLf) {
     throw "published notes differ from RELEASE_NOTES.md"
 }
 
@@ -332,8 +378,12 @@ $remoteMainSha = gh api "repos/$repo/git/ref/heads/main" --jq '.object.sha'
 if ($tagCommitSha -cne $approvedSha) { throw "release tag no longer targets the approved commit" }
 if ($remoteMainSha -cne $approvedSha) { throw "remote main no longer equals the approved release commit" }
 
-git fetch origin main --tags
-$protectedV014Commit = git rev-parse 'refs/tags/v0.1.4^{commit}'
+$protectedTagRef = gh api "repos/$repo/git/ref/tags/v0.1.4" | ConvertFrom-Json
+if ($protectedTagRef.object.type -cne "tag") { throw "protected v0.1.4 tag is not annotated" }
+$protectedTagObjectSha = $protectedTagRef.object.sha
+$protectedTagObject = gh api "repos/$repo/git/tags/$protectedTagObjectSha" | ConvertFrom-Json
+if ($protectedTagObject.object.type -cne "commit") { throw "protected v0.1.4 tag does not target a commit" }
+$protectedV014Commit = $protectedTagObject.object.sha
 if ($protectedV014Commit -cne "2f29bb51957888b1f427be44a7a0866ed4f4f5e5") {
     throw "protected v0.1.4 commit changed"
 }
