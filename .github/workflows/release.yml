@@ -18,11 +18,11 @@ jobs:
           echo "v0.1.0 is frozen and must never be rebuilt or replaced." >&2
           exit 1
   release:
-    if: github.ref_name != 'v0.1.0'
     permissions:
       attestations: write # Record provenance and SBOM attestations for release assets.
       contents: write # Create the draft release, upload assets and publish it.
       id-token: write # Obtain the OIDC identity required to sign attestations.
-    uses: ryanduguid/release-policy/.github/workflows/release-archive.yml@47480b782926179b621ec1c6643ef88c80fc8fd4
+    uses: ryanduguid/release-policy/.github/workflows/release-skills.yml@f180faa567e95669224211d0282b3b437fe79ea9
     with:
       artifact-stem: subcontractor-accounting-skills
+      skills-verification-mode: subcontractor-accounting-v1
