@@ -108,7 +108,6 @@ def is_powershell_fence(info: str) -> bool:
 def powershell_fence_bodies(text: str) -> list[str]:
     bodies = []
     powershell_opening_offsets = set()
-    shielding_block_spans = []
     search_start = 0
     while opening := FENCE_OPENING.search(text, search_start):
         marker = opening["marker"]
@@ -138,10 +137,6 @@ def powershell_fence_bodies(text: str) -> list[str]:
             powershell_opening_offsets.add(opening.start())
 
         block_end = closing.end() if closing else len(text)
-        # An indented marker may close a container fence. Only an unindented
-        # outer fence can safely shield PowerShell-looking literal content.
-        if not opening["indent"]:
-            shielding_block_spans.append((opening.start(), block_end))
         search_start = block_end
 
     for opening_pattern in (FENCE_OPENING, NON_TOP_LEVEL_FENCE_OPENING):
@@ -149,11 +144,6 @@ def powershell_fence_bodies(text: str) -> list[str]:
             if not is_powershell_fence(candidate["info"]):
                 continue
             if candidate.start() in powershell_opening_offsets:
-                continue
-            if any(
-                start <= candidate.start() < end
-                for start, end in shielding_block_spans
-            ):
                 continue
             raise AssertionError(
                 "PowerShell fence is not part of the approved executable block set"
@@ -1385,6 +1375,12 @@ class ReleaseRunbookTests(unittest.TestCase):
                 '''Write-Output "unsafe untracked fence"\n'''
                 '''```\n'''
             ),
+            "raw HTML block spoofing a generic fence span": (
+                '''<script>\n```text\n</script>\n'''
+                '''```powershell\n'''
+                '''Write-Output "unsafe untracked fence"\n'''
+                '''```\n'''
+            ),
             "nested blockquote ps1 fence": (
                 '''> ~~~~Ps1\n> Write-Output "unsafe untracked fence"\n> ~~~~\n'''
             ),
@@ -1442,7 +1438,8 @@ class ReleaseRunbookTests(unittest.TestCase):
             '''    ```\n'''
             '''````\n'''
         )
-        self.assertEqual(powershell_fence_bodies(generic_fence), [])
+        with self.assertRaisesRegex(AssertionError, "approved executable block"):
+            powershell_fence_bodies(generic_fence)
 
         double_encoded_info = (
             '''```power&amp;#115;hell\n'''
