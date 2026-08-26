@@ -20,8 +20,8 @@ FENCE_OPENING = re.compile(
     re.MULTILINE,
 )
 NON_TOP_LEVEL_FENCE_OPENING = re.compile(
-    r"^(?:(?:(?: {0,3}>[ \t]?)|"
-    r"(?: {0,3}(?:[-+*]|\d{1,9}[.)])[ \t]+))+ {0,3}|[ \t]+)"
+    r"^(?:(?:(?:[ \t]*>[ \t]?)|"
+    r"(?:[ \t]*(?:[-+*]|\d{1,9}[.)])[ \t]+))+[ \t]*|[ \t]+)"
     r"(?P<marker>`{3,}|~{3,})"
     r"(?P<info>[^\r\n]*)(?:\r?\n|\Z)",
     re.MULTILINE,
@@ -98,16 +98,17 @@ POST_APPROVAL_TAG_QUERY = (
 
 
 def is_powershell_fence(info: str) -> bool:
-    info_words = info.strip().split(maxsplit=1)
+    info_words = unescape(info).strip().split(maxsplit=1)
     return bool(
         info_words
-        and unescape(info_words[0]).casefold() in POWERSHELL_FENCE_LANGUAGES
+        and info_words[0].casefold() in POWERSHELL_FENCE_LANGUAGES
     )
 
 
 def powershell_fence_bodies(text: str) -> list[str]:
     bodies = []
-    block_spans = []
+    powershell_opening_offsets = set()
+    shielding_block_spans = []
     search_start = 0
     while opening := FENCE_OPENING.search(text, search_start):
         marker = opening["marker"]
@@ -134,17 +135,28 @@ def powershell_fence_bodies(text: str) -> list[str]:
 
         if is_powershell_fence(info):
             bodies.append(body)
+            powershell_opening_offsets.add(opening.start())
 
         block_end = closing.end() if closing else len(text)
-        block_spans.append((opening.start(), block_end))
+        # An indented marker may close a container fence. Only an unindented
+        # outer fence can safely shield PowerShell-looking literal content.
+        if not opening["indent"]:
+            shielding_block_spans.append((opening.start(), block_end))
         search_start = block_end
 
-    for opening in NON_TOP_LEVEL_FENCE_OPENING.finditer(text):
-        if any(start <= opening.start() < end for start, end in block_spans):
-            continue
-        if is_powershell_fence(opening["info"]):
+    for opening_pattern in (FENCE_OPENING, NON_TOP_LEVEL_FENCE_OPENING):
+        for candidate in opening_pattern.finditer(text):
+            if not is_powershell_fence(candidate["info"]):
+                continue
+            if candidate.start() in powershell_opening_offsets:
+                continue
+            if any(
+                start <= candidate.start() < end
+                for start, end in shielding_block_spans
+            ):
+                continue
             raise AssertionError(
-                "PowerShell fences outside the approved top-level form are not approved"
+                "PowerShell fence is not part of the approved executable block set"
             )
 
     return bodies
@@ -1342,6 +1354,12 @@ class ReleaseRunbookTests(unittest.TestCase):
             "entity-encoded powershell fence": (
                 '''```power&#115;hell\nWrite-Output "unsafe untracked fence"\n```\n'''
             ),
+            "entity-encoded info separator": (
+                '''```ps1&#32;extra\nWrite-Output "unsafe untracked fence"\n```\n'''
+            ),
+            "entity-encoded leading whitespace": (
+                '''```&#x20;pwsh\nWrite-Output "unsafe untracked fence"\n```\n'''
+            ),
             "blockquote powershell fence": (
                 '''> ```powershell\n> Write-Output "unsafe untracked fence"\n> ```\n'''
             ),
@@ -1350,6 +1368,22 @@ class ReleaseRunbookTests(unittest.TestCase):
             ),
             "indented list-item pwsh fence": (
                 '''- item\n    ```pwsh\n    Write-Output "unsafe untracked fence"\n    ```\n'''
+            ),
+            "nested list-item pwsh fence": (
+                '''- outer\n    - ```pwsh\n      Write-Output "unsafe untracked fence"\n      ```\n'''
+            ),
+            "nested list blockquote ps1 fence": (
+                '''- outer\n    > ```ps1\n    > Write-Output "unsafe untracked fence"\n    > ```\n'''
+            ),
+            "generic list fence before pwsh sibling": (
+                '''- ```text\n  harmless\n  ```\n'''
+                '''- ```pwsh\n  Write-Output "unsafe untracked fence"\n  ```\n'''
+            ),
+            "generic list fence before top-level powershell": (
+                '''- ```text\n  harmless\n  ```\n'''
+                '''```powershell\n'''
+                '''Write-Output "unsafe untracked fence"\n'''
+                '''```\n'''
             ),
             "nested blockquote ps1 fence": (
                 '''> ~~~~Ps1\n> Write-Output "unsafe untracked fence"\n> ~~~~\n'''
@@ -1390,6 +1424,12 @@ class ReleaseRunbookTests(unittest.TestCase):
                 '''~~~~\n''',
                 'Write-Output "decoded"',
             ),
+            "entity-encoded whitespace": (
+                '''```power&#115;hell&#32;linenums\n'''
+                '''Write-Output "decoded before splitting"\n'''
+                '''```\n''',
+                'Write-Output "decoded before splitting"',
+            ),
         }
         for name, (source, expected_body) in cases.items():
             with self.subTest(form=name):
@@ -1403,6 +1443,13 @@ class ReleaseRunbookTests(unittest.TestCase):
             '''````\n'''
         )
         self.assertEqual(powershell_fence_bodies(generic_fence), [])
+
+        double_encoded_info = (
+            '''```power&amp;#115;hell\n'''
+            '''Write-Output "not a PowerShell-labelled fence"\n'''
+            '''```\n'''
+        )
+        self.assertEqual(powershell_fence_bodies(double_encoded_info), [])
 
     def test_runbook_contract_rejects_structural_bypasses(self) -> None:
         text = RUNBOOK.read_text(encoding="utf-8")
