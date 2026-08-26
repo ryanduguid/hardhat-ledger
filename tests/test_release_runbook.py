@@ -1,9 +1,11 @@
 from pathlib import Path
 import copy
+from hashlib import sha256
 import json
 import re
 import shutil
 import subprocess
+import textwrap
 import unittest
 
 
@@ -12,7 +14,10 @@ RUNBOOK = ROOT / "RELEASING.md"
 EVIDENCE = ROOT / "docs" / "releases" / "v0.1.5.md"
 POWERSHELL = shutil.which("pwsh")
 FENCE = re.compile(r"```powershell\n(?P<code>.*?)\n```", re.DOTALL)
-
+# SHA-256 of compact UTF-8 JSON for the five ordered PowerShell fence bodies.
+APPROVED_POWERSHELL_FENCES_SHA256 = (
+    "ec22fc86dfaf1392709bff9f4c2252a03be688e4d6ff8f30e620428eb8bb818f"
+)
 POWERSHELL_VERSION_PREREQUISITE = (
     "Use a clean checkout of remote `main` and PowerShell 7.4 or newer."
 )
@@ -83,6 +88,23 @@ $sources = @([Console]::In.ReadToEnd() | ConvertFrom-Json)
 $assignments = [Collections.Generic.List[object]]::new()
 $commands = [Collections.Generic.List[object]]::new()
 $conditions = [Collections.Generic.List[object]]::new()
+$invocations = [Collections.Generic.List[object]]::new()
+$throws = [Collections.Generic.List[object]]::new()
+$terminators = [Collections.Generic.List[object]]::new()
+
+$scopePlumbingTypes = @("NamedBlockAst", "PipelineAst", "StatementBlockAst")
+
+function Get-NonPlumbingAncestors([object]$Node) {
+    $scope = [Collections.Generic.List[string]]::new()
+    $parent = $Node.Parent
+    while ($null -ne $parent) {
+        if ($scopePlumbingTypes -cnotcontains $parent.GetType().Name) {
+            $scope.Add($parent.GetType().Name)
+        }
+        $parent = $parent.Parent
+    }
+    return [string[]]$scope
+}
 
 for ($fence = 0; $fence -lt $sources.Count; $fence++) {
     $tokens = $null
@@ -109,6 +131,7 @@ for ($fence = 0; $fence -lt $sources.Count; $fence++) {
             text = $node.Extent.Text
             start = $node.Extent.StartOffset
             end = $node.Extent.EndOffset
+            scope = [object[]]@(Get-NonPlumbingAncestors $node)
             topLevel = (
                 $node.Parent -is [Management.Automation.Language.NamedBlockAst] -and
                 $node.Parent.Parent -is
@@ -129,6 +152,7 @@ for ($fence = 0; $fence -lt $sources.Count; $fence++) {
             text = $node.Extent.Text
             start = $node.Extent.StartOffset
             end = $node.Extent.EndOffset
+            scope = [object[]]@(Get-NonPlumbingAncestors $node)
             topLevel = (
                 $node.Parent -is [Management.Automation.Language.PipelineAst] -and
                 $node.Parent.Parent -is
@@ -151,8 +175,59 @@ for ($fence = 0; $fence -lt $sources.Count; $fence++) {
                 text = $node.Extent.Text
                 start = $node.Extent.StartOffset
                 end = $node.Extent.EndOffset
+                bodyStart = $clause.Item2.Extent.StartOffset
+                bodyEnd = $clause.Item2.Extent.EndOffset
+                scope = [object[]]@(Get-NonPlumbingAncestors $node)
             })
         }
+    }
+
+    $invocationNodes = $ast.FindAll({
+        param($node)
+        $node -is [Management.Automation.Language.InvokeMemberExpressionAst]
+    }, $true)
+    foreach ($node in $invocationNodes) {
+        $invocations.Add([pscustomobject]@{
+            fence = $fence
+            member = $node.Member.Extent.Text
+            text = $node.Extent.Text
+            start = $node.Extent.StartOffset
+            end = $node.Extent.EndOffset
+            scope = [object[]]@(Get-NonPlumbingAncestors $node)
+        })
+    }
+
+    $throwNodes = $ast.FindAll({
+        param($node)
+        $node -is [Management.Automation.Language.ThrowStatementAst]
+    }, $true)
+    foreach ($node in $throwNodes) {
+        $throws.Add([pscustomobject]@{
+            fence = $fence
+            text = $node.Extent.Text
+            start = $node.Extent.StartOffset
+            end = $node.Extent.EndOffset
+            scope = [object[]]@(Get-NonPlumbingAncestors $node)
+        })
+    }
+
+    $terminationNodes = $ast.FindAll({
+        param($node)
+        $node -is [Management.Automation.Language.ReturnStatementAst] -or
+        $node -is [Management.Automation.Language.ExitStatementAst] -or
+        $node -is [Management.Automation.Language.BreakStatementAst] -or
+        $node -is [Management.Automation.Language.ContinueStatementAst] -or
+        $node -is [Management.Automation.Language.TrapStatementAst]
+    }, $true)
+    foreach ($node in $terminationNodes) {
+        $terminators.Add([pscustomobject]@{
+            fence = $fence
+            kind = $node.GetType().Name
+            text = $node.Extent.Text
+            start = $node.Extent.StartOffset
+            end = $node.Extent.EndOffset
+            scope = [object[]]@(Get-NonPlumbingAncestors $node)
+        })
     }
 }
 
@@ -160,6 +235,9 @@ for ($fence = 0; $fence -lt $sources.Count; $fence++) {
     assignments = [object[]]$assignments
     commands = [object[]]$commands
     conditions = [object[]]$conditions
+    invocations = [object[]]$invocations
+    throws = [object[]]$throws
+    terminators = [object[]]$terminators
 } | ConvertTo-Json -Depth 5 -Compress
 '''
 
@@ -201,6 +279,65 @@ RELEASE_VERIFICATION_COMMANDS = (
 
 VERIFICATION_NOT_COMPLETE = "$verificationSucceeded = $false"
 VERIFICATION_COMPLETE = "$verificationSucceeded = $true"
+CLEANUP_SUCCESS_CONDITION = (
+    "$verificationSucceeded -and (Test-Path -LiteralPath $downloadPath)"
+)
+SERVER_DIGEST_CONDITION = "$serverDigestChecks -ne 4"
+PAYLOAD_DIGEST_CONDITION = (
+    "$checksumLines.Count -ne 3 -or $payloadChecksumChecks -ne 3"
+)
+CLEANUP_CONTAINMENT_CONDITION = '''[IO.Path]::IsPathRooted($relativeDownloadPath) -or
+            $relativeDownloadPath -eq "." -or
+            $relativeDownloadPath -eq ".." -or
+            $relativeDownloadPath.StartsWith("..$([IO.Path]::DirectorySeparatorChar)") -or
+            $relativeDownloadPath.StartsWith("..$([IO.Path]::AltDirectorySeparatorChar)")'''
+CLEANUP_TEMP_ROOT_REPARSE_CONDITION = (
+    "$tempRootItem.Attributes -band [IO.FileAttributes]::ReparsePoint"
+)
+CLEANUP_DOWNLOAD_REPARSE_CONDITION = (
+    "$downloadItem.Attributes -band [IO.FileAttributes]::ReparsePoint"
+)
+CLEANUP_GUARDS = (
+    (
+        CLEANUP_CONTAINMENT_CONDITION,
+        'throw "cleanup path is not a unique contained child"',
+    ),
+    (
+        CLEANUP_TEMP_ROOT_REPARSE_CONDITION,
+        'throw "system temporary directory became a reparse point"',
+    ),
+    (
+        CLEANUP_DOWNLOAD_REPARSE_CONDITION,
+        'throw "cleanup path is a reparse point"',
+    ),
+)
+CLEANUP_ASSIGNMENTS = {
+    "temproot": '''$tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd(
+            [IO.Path]::DirectorySeparatorChar,
+            [IO.Path]::AltDirectorySeparatorChar
+        )''',
+    "resolveddownloadpath": (
+        "$resolvedDownloadPath = [IO.Path]::GetFullPath($downloadPath)"
+    ),
+    "relativedownloadpath": (
+        "$relativeDownloadPath = "
+        "[IO.Path]::GetRelativePath($tempRoot, $resolvedDownloadPath)"
+    ),
+    "temprootitem": "$tempRootItem = Get-Item -LiteralPath $tempRoot -Force",
+    "downloaditem": (
+        "$downloadItem = Get-Item -LiteralPath $resolvedDownloadPath -Force"
+    ),
+}
+DOWNLOAD_PATH_ASSIGNMENT = '''$downloadPath = Join-Path `
+    -Path $tempRoot `
+    -ChildPath ("hardhat-ledger-release-" + [guid]::NewGuid().ToString("N"))'''
+ROOT_EXECUTION_SCOPE = ("ScriptBlockAst",)
+TRY_EXECUTION_SCOPE = ("TryStatementAst", "ScriptBlockAst")
+CLEANUP_EXECUTION_SCOPE = (
+    "IfStatementAst",
+    "TryStatementAst",
+    "ScriptBlockAst",
+)
 CLEANUP_SUCCESS_GATE = """} finally {
     if ($verificationSucceeded -and (Test-Path -LiteralPath $downloadPath)) {"""
 EVIDENCE_RETENTION_NOTICE = """    } elseif (-not $verificationSucceeded) {
@@ -264,6 +401,336 @@ def powershell_ast_evidence(
     return json.loads(result.stdout)
 
 
+def normalise_powershell_reference(value: object) -> str:
+    return re.sub(r"[^a-z0-9]", "", str(value).casefold())
+
+
+def assert_powershell_fence_snapshot(
+    testcase: unittest.TestCase, fences: list[str]
+) -> None:
+    testcase.assertEqual(len(fences), 5)
+    payload = json.dumps(
+        fences,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    testcase.assertEqual(
+        sha256(payload).hexdigest(),
+        APPROVED_POWERSHELL_FENCES_SHA256,
+    )
+
+
+def only_ast_node(
+    testcase: unittest.TestCase,
+    nodes: list[dict[str, object]],
+    **expected: object,
+) -> dict[str, object]:
+    matches = [
+        node
+        for node in nodes
+        if all(node.get(key) == value for key, value in expected.items())
+    ]
+    testcase.assertEqual(len(matches), 1)
+    return matches[0]
+
+
+def assert_release_verification_ast_contract(
+    testcase: unittest.TestCase,
+    ast: dict[str, list[dict[str, object]]],
+) -> None:
+    verification_assignments = [
+        assignment
+        for assignment in ast["assignments"]
+        if assignment["name"] is not None
+        and str(assignment["name"]).casefold().rsplit(":", 1)[-1]
+        == "verificationsucceeded"
+    ]
+    testcase.assertEqual(len(verification_assignments), 2)
+    false_assignment = only_ast_node(
+        testcase,
+        verification_assignments,
+        text=VERIFICATION_NOT_COMPLETE,
+    )
+    true_assignment = only_ast_node(
+        testcase,
+        verification_assignments,
+        text=VERIFICATION_COMPLETE,
+    )
+    testcase.assertTrue(false_assignment["topLevel"])
+    testcase.assertEqual(
+        false_assignment["scope"],
+        list(ROOT_EXECUTION_SCOPE),
+    )
+    testcase.assertEqual(
+        true_assignment["scope"],
+        list(TRY_EXECUTION_SCOPE),
+    )
+    verification_fence = true_assignment["fence"]
+    testcase.assertEqual(false_assignment["fence"], verification_fence)
+    verification_not_complete_end = int(false_assignment["end"])
+    verification_complete_start = int(true_assignment["start"])
+
+    indirect_assignments = [
+        assignment
+        for assignment in ast["assignments"]
+        if assignment["fence"] == verification_fence
+        and assignment["name"] is None
+    ]
+    testcase.assertEqual(indirect_assignments, [])
+    weakened_preferences = [
+        assignment
+        for assignment in ast["assignments"]
+        if assignment["fence"] == verification_fence
+        and assignment["name"] is not None
+        and str(assignment["name"]).casefold()
+        in {
+            "erroractionpreference",
+            "psnativecommanduseerroractionpreference",
+        }
+    ]
+    testcase.assertEqual(weakened_preferences, [])
+
+    provider_assignment_references = [
+        assignment
+        for assignment in ast["assignments"]
+        if assignment["fence"] == verification_fence
+        and assignment not in verification_assignments
+        and verification_not_complete_end < int(assignment["start"])
+        and (
+            "verificationsucceeded"
+            in normalise_powershell_reference(assignment["text"])
+            or "variableverification"
+            in normalise_powershell_reference(assignment["text"])
+        )
+    ]
+    testcase.assertEqual(provider_assignment_references, [])
+
+    variable_writer_commands = {
+        "new-item",
+        "new-variable",
+        "ni",
+        "nv",
+        "sc",
+        "set-content",
+        "set-item",
+        "set-variable",
+        "si",
+        "sv",
+    }
+    flag_command_references = [
+        command
+        for command in ast["commands"]
+        if command["fence"] == verification_fence
+        and verification_not_complete_end < int(command["start"])
+        and (
+            (
+                command["name"] is not None
+                and str(command["name"]).casefold()
+                in variable_writer_commands
+            )
+            or "verificationsucceeded"
+            in normalise_powershell_reference(command["text"])
+            or "variableverification"
+            in normalise_powershell_reference(command["text"])
+        )
+    ]
+    testcase.assertEqual(flag_command_references, [])
+
+    flag_invocation_references = [
+        invocation
+        for invocation in ast["invocations"]
+        if invocation["fence"] == verification_fence
+        and verification_not_complete_end < int(invocation["start"])
+        and (
+            str(invocation["member"]).casefold() == "set"
+            or "verificationsucceeded"
+            in normalise_powershell_reference(invocation["text"])
+        )
+    ]
+    testcase.assertEqual(flag_invocation_references, [])
+
+    verification_terminators = [
+        terminator
+        for terminator in ast["terminators"]
+        if terminator["fence"] == verification_fence
+    ]
+    testcase.assertEqual(verification_terminators, [])
+
+    def assert_direct_throw(
+        condition: dict[str, object], expected_throw: str
+    ) -> None:
+        matching_throws = [
+            throw
+            for throw in ast["throws"]
+            if throw["fence"] == condition["fence"]
+            and throw["text"] == expected_throw
+            and int(condition["bodyStart"]) < int(throw["start"])
+            and int(throw["end"]) < int(condition["bodyEnd"])
+        ]
+        testcase.assertEqual(len(matching_throws), 1)
+        testcase.assertEqual(
+            matching_throws[0]["scope"],
+            ["IfStatementAst", *condition["scope"]],
+        )
+
+    for expected_condition, expected_throw in (
+        (
+            SERVER_DIGEST_CONDITION,
+            'throw "four server digest checks did not complete"',
+        ),
+        (
+            PAYLOAD_DIGEST_CONDITION,
+            'throw "exactly three payload checksum bindings were not proved"',
+        ),
+    ):
+        condition = only_ast_node(
+            testcase,
+            ast["conditions"],
+            fence=verification_fence,
+            condition=expected_condition,
+        )
+        testcase.assertEqual(
+            condition["scope"],
+            list(TRY_EXECUTION_SCOPE),
+        )
+        testcase.assertLess(
+            int(condition["end"]),
+            verification_complete_start,
+        )
+        assert_direct_throw(condition, expected_throw)
+
+    for expected_command in (
+        *PROVENANCE_COMMANDS,
+        *SPDX_COMMANDS,
+        *RELEASE_VERIFICATION_COMMANDS,
+    ):
+        command = only_ast_node(
+            testcase,
+            ast["commands"],
+            text=expected_command,
+        )
+        testcase.assertEqual(command["fence"], verification_fence)
+        testcase.assertEqual(
+            command["scope"],
+            list(TRY_EXECUTION_SCOPE),
+        )
+        testcase.assertLess(
+            int(command["end"]),
+            verification_complete_start,
+        )
+
+    cleanup_condition = only_ast_node(
+        testcase,
+        ast["conditions"],
+        fence=verification_fence,
+        condition=CLEANUP_SUCCESS_CONDITION,
+    )
+    testcase.assertEqual(
+        cleanup_condition["scope"],
+        list(TRY_EXECUTION_SCOPE),
+    )
+    cleanup_body_start = int(cleanup_condition["bodyStart"])
+    cleanup_body_end = int(cleanup_condition["bodyEnd"])
+
+    cleanup_guards = {}
+    cleanup_conditions = [
+        condition
+        for condition in ast["conditions"]
+        if condition["fence"] == verification_fence
+        and cleanup_body_start < int(condition["start"])
+        and int(condition["end"]) < cleanup_body_end
+    ]
+    for guard_condition, guard_throw in CLEANUP_GUARDS:
+        guard = only_ast_node(
+            testcase,
+            cleanup_conditions,
+            condition=guard_condition,
+        )
+        testcase.assertEqual(
+            guard["scope"],
+            list(CLEANUP_EXECUTION_SCOPE),
+        )
+        assert_direct_throw(guard, guard_throw)
+        cleanup_guards[guard_throw] = guard
+
+    critical_assignment_counts = {
+        "downloadpath": 1,
+        **{name: 2 for name in CLEANUP_ASSIGNMENTS},
+    }
+    critical_assignments = [
+        assignment
+        for assignment in ast["assignments"]
+        if assignment["fence"] == verification_fence
+        and assignment["name"] is not None
+        and str(assignment["name"]).casefold() in critical_assignment_counts
+    ]
+    for assignment_name, expected_count in critical_assignment_counts.items():
+        actual_count = sum(
+            str(assignment["name"]).casefold() == assignment_name
+            for assignment in critical_assignments
+        )
+        testcase.assertEqual(actual_count, expected_count)
+
+    download_path_assignment = only_ast_node(
+        testcase,
+        critical_assignments,
+        name="downloadPath",
+        text=DOWNLOAD_PATH_ASSIGNMENT,
+    )
+    testcase.assertEqual(
+        download_path_assignment["scope"],
+        list(ROOT_EXECUTION_SCOPE),
+    )
+
+    cleanup_assignments_by_name = {}
+    cleanup_assignments = [
+        assignment
+        for assignment in critical_assignments
+        if cleanup_body_start < int(assignment["start"])
+        and int(assignment["end"]) < cleanup_body_end
+    ]
+    for assignment_name, expected_text in CLEANUP_ASSIGNMENTS.items():
+        assignment = only_ast_node(
+            testcase,
+            cleanup_assignments,
+            text=expected_text,
+        )
+        testcase.assertEqual(
+            assignment["scope"],
+            list(CLEANUP_EXECUTION_SCOPE),
+        )
+        cleanup_assignments_by_name[assignment_name] = assignment
+
+    removal_command = only_ast_node(
+        testcase,
+        ast["commands"],
+        fence=verification_fence,
+        text="Remove-Item -LiteralPath $resolvedDownloadPath -Force -Recurse",
+    )
+    testcase.assertLess(cleanup_body_start, int(removal_command["start"]))
+    testcase.assertLess(int(removal_command["end"]), cleanup_body_end)
+    testcase.assertEqual(
+        removal_command["scope"],
+        list(CLEANUP_EXECUTION_SCOPE),
+    )
+
+    ordered_cleanup_nodes = (
+        cleanup_assignments_by_name["temproot"],
+        cleanup_assignments_by_name["resolveddownloadpath"],
+        cleanup_assignments_by_name["relativedownloadpath"],
+        cleanup_guards['throw "cleanup path is not a unique contained child"'],
+        cleanup_assignments_by_name["temprootitem"],
+        cleanup_guards[
+            'throw "system temporary directory became a reparse point"'
+        ],
+        cleanup_assignments_by_name["downloaditem"],
+        cleanup_guards['throw "cleanup path is a reparse point"'],
+        removal_command,
+    )
+    for before, after in zip(ordered_cleanup_nodes, ordered_cleanup_nodes[1:]):
+        testcase.assertLess(int(before["end"]), int(after["start"]))
+
+
 def assert_powershell_version_contract(
     testcase: unittest.TestCase, text: str
 ) -> None:
@@ -282,7 +749,9 @@ def assert_powershell_version_contract(
 
 
 def assert_evidence_retention_contract(
-    testcase: unittest.TestCase, text: str
+    testcase: unittest.TestCase,
+    text: str,
+    ast: dict[str, list[dict[str, object]]] | None = None,
 ) -> None:
     testcase.assertEqual(text.count(VERIFICATION_NOT_COMPLETE), 1)
     testcase.assertEqual(text.count(VERIFICATION_COMPLETE), 1)
@@ -303,18 +772,6 @@ def assert_evidence_retention_contract(
     testcase.assertLess(final_block, cleanup)
     testcase.assertLess(cleanup, retention_notice)
 
-    completed_proofs = (
-        "$serverDigestChecks -ne 4",
-        "$payloadChecksumChecks -ne 3",
-        *PROVENANCE_COMMANDS,
-        *SPDX_COMMANDS,
-        *RELEASE_VERIFICATION_COMMANDS,
-    )
-    for proof in completed_proofs:
-        proof_position = text.find(proof, verification_try)
-        testcase.assertNotEqual(proof_position, -1)
-        testcase.assertLess(proof_position, complete)
-
     successful_cleanup = text[final_block:cleanup]
     testcase.assertIn("[IO.Path]::GetRelativePath", successful_cleanup)
     testcase.assertIn(
@@ -322,10 +779,15 @@ def assert_evidence_retention_contract(
     )
     testcase.assertNotIn("throw", EVIDENCE_RETENTION_NOTICE)
 
+    if ast is None:
+        fences = [match["code"] for match in FENCE.finditer(text)]
+        testcase.assertGreaterEqual(len(fences), 4)
+        ast = powershell_ast_evidence(testcase, fences)
+    assert_release_verification_ast_contract(testcase, ast)
+
 
 def assert_runbook_contract(testcase: unittest.TestCase, text: str) -> None:
     assert_powershell_version_contract(testcase, text)
-    assert_evidence_retention_contract(testcase, text)
     testcase.assertIn("## Published v0.1.5 baseline", text)
     testcase.assertIn("## Future release procedure", text)
     testcase.assertNotIn("recovery version is `v0.1.5`", text)
@@ -345,6 +807,8 @@ def assert_runbook_contract(testcase: unittest.TestCase, text: str) -> None:
     testcase.assertGreaterEqual(len(fences), 4)
     testcase.assertTrue(fences[0].startswith(INITIAL_FENCE))
     ast = powershell_ast_evidence(testcase, fences)
+    assert_evidence_retention_contract(testcase, text, ast)
+    assert_powershell_fence_snapshot(testcase, fences)
     native_fail_closed = text.index("$PSNativeCommandUseErrorActionPreference = $true")
     first_native_command = min(text.index("git fetch"), text.index("gh api"))
     testcase.assertLess(native_fail_closed, first_native_command)
@@ -513,28 +977,6 @@ def assert_runbook_contract(testcase: unittest.TestCase, text: str) -> None:
         'if (-not ($checksumLines -ccontains "$payloadDigest  $payloadName"))',
         text,
     )
-    attestation_lines = [
-        line.strip()
-        for line in text.splitlines()
-        if line.strip().startswith("gh attestation verify ")
-    ]
-    provenance_lines = [
-        line for line in attestation_lines if "--predicate-type" not in line
-    ]
-    spdx_lines = [line for line in attestation_lines if "--predicate-type" in line]
-    testcase.assertCountEqual(provenance_lines, PROVENANCE_COMMANDS)
-    testcase.assertCountEqual(spdx_lines, SPDX_COMMANDS)
-
-    release_verification_lines = [
-        line.strip()
-        for line in text.splitlines()
-        if line.strip().startswith("gh release verify")
-    ]
-    testcase.assertCountEqual(
-        release_verification_lines,
-        RELEASE_VERIFICATION_COMMANDS,
-    )
-
     testcase.assertIn(PROTECTED_TAG_LIVE_PROOF, text)
     testcase.assertNotIn("$protectedV014Commit = git rev-parse", text)
 
@@ -949,6 +1391,269 @@ class ReleaseRunbookTests(unittest.TestCase):
                     assert_evidence_retention_contract(self, mutated)
 
         assert_evidence_retention_contract(self, text)
+
+    def test_release_proofs_reject_conditional_and_early_success_bypasses(
+        self,
+    ) -> None:
+        text = RUNBOOK.read_text(encoding="utf-8")
+        assert_runbook_contract(self, text)
+
+        def wrap_executable(
+            source: str,
+            snippet: str,
+            opening: str,
+            closing: str,
+        ) -> str:
+            self.assertEqual(source.count(snippet), 1)
+            indentation = snippet[: len(snippet) - len(snippet.lstrip())]
+            return source.replace(
+                snippet,
+                indentation
+                + opening
+                + "\n"
+                + textwrap.indent(snippet, "    ")
+                + "\n"
+                + indentation
+                + closing,
+                1,
+            )
+
+        download = (
+            "    gh release download $releaseTag --repo $repo "
+            "--dir $resolvedDownloadPath"
+        )
+        server_digest_gate = '''    if ($serverDigestChecks -ne 4) {
+        throw "four server digest checks did not complete"
+    }'''
+        payload_digest_gate = '''    if ($checksumLines.Count -ne 3 -or $payloadChecksumChecks -ne 3) {
+        throw "exactly three payload checksum bindings were not proved"
+    }'''
+        cleanup_temp_root_guard = '''        if ($tempRootItem.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            throw "system temporary directory became a reparse point"
+        }'''
+        cleanup_download_guard = '''        if ($downloadItem.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            throw "cleanup path is a reparse point"
+        }'''
+        cleanup_download_guard_else = '''        if ($downloadItem.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            # unsafe path accepted
+        } else {
+            throw "cleanup path is a reparse point"
+        }'''
+        cleanup_removal = (
+            "        Remove-Item -LiteralPath $resolvedDownloadPath "
+            "-Force -Recurse"
+        )
+        cleanup_failure_branch = "    } elseif (-not $verificationSucceeded) {"
+
+        proof_after_success = text.replace(
+            "    " + PROVENANCE_COMMANDS[0],
+            "    # " + PROVENANCE_COMMANDS[0],
+            1,
+        ).replace(
+            "    " + VERIFICATION_COMPLETE,
+            "    "
+            + VERIFICATION_COMPLETE
+            + "\n    "
+            + PROVENANCE_COMMANDS[0],
+            1,
+        )
+        server_digest_throw_in_else_if = text.replace(
+            server_digest_gate,
+            '''    if ($serverDigestChecks -ne 4) {
+    } elseif ($false) {
+        throw "four server digest checks did not complete"
+    }''',
+            1,
+        )
+        mismatched_cleanup_data_flow = text.replace(
+            "    " + VERIFICATION_COMPLETE,
+            "    " + VERIFICATION_COMPLETE + "\n    $downloadPath = $tempRoot",
+            1,
+        ).replace(
+            "        $relativeDownloadPath = "
+            "[IO.Path]::GetRelativePath($tempRoot, $resolvedDownloadPath)",
+            "        $relativeDownloadPath = [IO.Path]::GetRelativePath(\n"
+            '            $tempRoot, [IO.Path]::Combine($tempRoot, "decoy")\n'
+            "        )",
+            1,
+        )
+
+        writer_snippets = {
+            "Set-Variable writer": (
+                "Set-Variable -Name ('verification' + 'Succeeded') -Value $true"
+            ),
+            "Set-Variable alias writer": (
+                "sv -Name verificationSucceeded -Value $true"
+            ),
+            "Get-Variable property writer": (
+                "(Get-Variable -Name ('verification' + 'Succeeded')).Value "
+                "= $true"
+            ),
+            "New-Variable writer": (
+                "New-Variable -Name verificationSucceeded -Value $true -Force"
+            ),
+            "wildcard Set-Item writer": (
+                "Set-Item -Path Variable:verificationSucceede? -Value $true"
+            ),
+            "wildcard Set-Content writer": (
+                "Set-Content -Path Variable:verificationSucceede? -Value $true"
+            ),
+            "New-Item provider writer": (
+                "$flagPath = 'Variable:verification' + 'Succeeded'\n"
+                "    New-Item -Path $flagPath -Value $true -Force | Out-Null"
+            ),
+            "SessionState method writer": (
+                "$ExecutionContext.SessionState.PSVariable.Set("
+                "'verification' + 'Succeeded', $true)"
+            ),
+        }
+        writer_mutations = {
+            name: text.replace(
+                download,
+                "    " + snippet + "\n" + download,
+                1,
+            )
+            for name, snippet in writer_snippets.items()
+        }
+        for name, mutated in writer_mutations.items():
+            fences = [match["code"] for match in FENCE.finditer(mutated)]
+            with self.subTest(snapshot=name):
+                with self.assertRaises(AssertionError):
+                    assert_powershell_fence_snapshot(self, fences)
+
+        before_download_snippets = {
+            "braced early success assignment": (
+                "$" + "{verificationSucceeded} = $true"
+            ),
+            "scoped early success assignment": (
+                "$script:verificationSucceeded = $true"
+            ),
+            "verification returns before proofs": "return",
+            "verification trap continues after proof failures": "trap { continue }",
+        }
+        before_download_mutations = {
+            name: text.replace(
+                download,
+                "    " + snippet + "\n" + download,
+                1,
+            )
+            for name, snippet in before_download_snippets.items()
+        }
+        conditional_mutations = {
+            name: wrap_executable(text, snippet, "if ($false) {", "}")
+            for name, snippet in {
+                "provenance proof is conditional": (
+                    "    " + PROVENANCE_COMMANDS[0]
+                ),
+                "server digest gate is conditional": server_digest_gate,
+                "payload digest gate is conditional": payload_digest_gate,
+                "cleanup temporary-root guard is conditional": (
+                    cleanup_temp_root_guard
+                ),
+                "cleanup download guard is conditional": cleanup_download_guard,
+            }.items()
+        }
+        short_circuit_mutations = {
+            name: wrap_executable(text, snippet, "$false -and $(", ")")
+            for name, snippet in {
+                "provenance proof is short-circuited": (
+                    "    " + PROVENANCE_COMMANDS[0]
+                ),
+                "cleanup deletion is short-circuited": cleanup_removal,
+            }.items()
+        }
+        commented_throw_mutations = {
+            name: text.replace(
+                snippet,
+                snippet.replace("throw ", "# throw ", 1),
+                1,
+            )
+            for name, snippet in {
+                "server digest failure is commented out": (
+                    '        throw "four server digest checks did not complete"'
+                ),
+                "payload digest failure is commented out": (
+                    '        throw "exactly three payload checksum bindings '
+                    'were not proved"'
+                ),
+                "cleanup containment failure is commented out": (
+                    '            throw "cleanup path is not a unique contained child"'
+                ),
+                "cleanup temporary-root failure is commented out": (
+                    '            throw "system temporary directory became a reparse point"'
+                ),
+                "cleanup download failure is commented out": (
+                    '            throw "cleanup path is a reparse point"'
+                ),
+            }.items()
+        }
+
+        mutations = {
+            **before_download_mutations,
+            **conditional_mutations,
+            **short_circuit_mutations,
+            **commented_throw_mutations,
+            "verification error preference is weakened": text.replace(
+                "    " + RELEASE_VERIFICATION_COMMANDS[-1],
+                '    $ErrorActionPreference = "SilentlyContinue"\n'
+                + "    "
+                + RELEASE_VERIFICATION_COMMANDS[-1],
+                1,
+            ),
+            "provenance proof follows success with comment spoof": (
+                proof_after_success
+            ),
+            "server digest failure is in an unreachable elseif": (
+                server_digest_throw_in_else_if
+            ),
+            "cleanup download guard is inverted": text.replace(
+                cleanup_download_guard,
+                '''        if (-not ($downloadItem.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            throw "cleanup path is a reparse point"
+        }''',
+                1,
+            ),
+            "cleanup download failure is in the else clause": text.replace(
+                cleanup_download_guard,
+                cleanup_download_guard_else,
+                1,
+            ),
+            "cleanup download guard follows deletion": text.replace(
+                cleanup_download_guard + "\n" + cleanup_removal,
+                cleanup_removal + "\n" + cleanup_download_guard,
+                1,
+            ),
+            "cleanup deletion is in an always-true elseif": text.replace(
+                cleanup_removal,
+                "        # deletion moved",
+                1,
+            ).replace(
+                cleanup_failure_branch,
+                "    } elseif ($true) {\n"
+                + cleanup_removal
+                + "\n"
+                + cleanup_failure_branch,
+                1,
+            ),
+            "cleanup deletion is duplicated in an always-true elseif": (
+                text.replace(
+                    cleanup_failure_branch,
+                    "    } elseif ($true) {\n"
+                    + cleanup_removal
+                    + "\n"
+                    + cleanup_failure_branch,
+                    1,
+                )
+            ),
+            "cleanup containment checks a decoy path": (
+                mismatched_cleanup_data_flow
+            ),
+        }
+
+        for name, mutated in mutations.items():
+            with self.subTest(mutation=name):
+                with self.assertRaises(AssertionError):
+                    assert_evidence_retention_contract(self, mutated)
 
     @unittest.skipUnless(POWERSHELL, "PowerShell 7 is required to test note normalisation")
     def test_note_normaliser_only_collapses_crlf(self) -> None:
