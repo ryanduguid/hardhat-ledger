@@ -10,6 +10,7 @@ import subprocess
 import sys
 import textwrap
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -1436,7 +1437,7 @@ def assert_runbook_contract(testcase: unittest.TestCase, text: str) -> None:
     testcase.assertIn("$remoteMainSha -cne $approvedSha", text)
 
     fences = powershell_fence_bodies(text)
-    assert_powershell_fence_snapshot(testcase, fences)
+    testcase.assertEqual(len(fences), EXPECTED_POWERSHELL_FENCES)
     testcase.assertTrue(fences[0].startswith(INITIAL_FENCE))
     ast = powershell_ast_evidence(testcase, fences)
     assert_evidence_retention_contract(testcase, text, ast)
@@ -1614,6 +1615,7 @@ def assert_runbook_contract(testcase: unittest.TestCase, text: str) -> None:
     )
     testcase.assertIn(PROTECTED_TAG_LIVE_PROOF, text)
     testcase.assertNotIn("$protectedV014Commit = git rev-parse", text)
+    assert_powershell_fence_snapshot(testcase, fences)
 
 
 def assert_evidence_contract(testcase: unittest.TestCase, text: str) -> None:
@@ -2224,6 +2226,21 @@ module.powershell_fence_bodies(sys.stdin.read())
                 except subprocess.TimeoutExpired:
                     self.fail("container-prefix parsing exceeded three seconds")
                 self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_ast_contract_runs_before_exact_fence_snapshot(self) -> None:
+        text = RUNBOOK.read_text(encoding="utf-8")
+        mutated = text.replace(
+            VERIFICATION_NOT_COMPLETE,
+            VERIFICATION_NOT_COMPLETE + "\n$verificationSucceeded++",
+            1,
+        )
+
+        with patch(
+            f"{__name__}.assert_release_verification_ast_contract",
+            side_effect=RuntimeError("AST contract reached"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "AST contract reached"):
+                assert_runbook_contract(self, mutated)
 
     def test_runbook_contract_rejects_structural_bypasses(self) -> None:
         text = RUNBOOK.read_text(encoding="utf-8")
