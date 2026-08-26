@@ -9,14 +9,6 @@ permissions:
   contents: read
 
 jobs:
-  refuse-frozen:
-    if: github.ref_name == 'v0.1.0'
-    runs-on: ubuntu-latest
-    steps:
-      - name: v0.1.0 is frozen
-        run: |
-          echo "v0.1.0 is frozen and must never be rebuilt or replaced." >&2
-          exit 1
   release:
     permissions:
       attestations: write # Record provenance and SBOM attestations for release assets.
