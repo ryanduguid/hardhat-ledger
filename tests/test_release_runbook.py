@@ -2,6 +2,7 @@ from pathlib import Path
 import base64
 import copy
 from hashlib import sha256
+from html import unescape
 import json
 import re
 import shutil
@@ -15,7 +16,15 @@ RUNBOOK = ROOT / "RELEASING.md"
 EVIDENCE = ROOT / "docs" / "releases" / "v0.1.5.md"
 POWERSHELL = shutil.which("pwsh")
 FENCE_OPENING = re.compile(
-    r"^ {0,3}(?P<marker>`{3,}|~{3,})(?P<info>[^\r\n]*)(?:\r?\n|\Z)",
+    r"^(?P<indent> {0,3})(?P<marker>`{3,}|~{3,})"
+    r"(?P<info>[^\r\n]*)(?:\r?\n|\Z)",
+    re.MULTILINE,
+)
+NON_TOP_LEVEL_FENCE_OPENING = re.compile(
+    r"^(?:(?:(?: {0,3}>[ \t]?)|"
+    r"(?: {0,3}(?:[-+*]|\d{1,9}[.)])[ \t]+))+ {0,3}|[ \t]+)"
+    r"(?P<marker>`{3,}|~{3,})"
+    r"(?P<info>[^\r\n]*)(?:\r?\n|\Z)",
     re.MULTILINE,
 )
 POWERSHELL_FENCE_LANGUAGES = frozenset({"powershell", "pwsh", "ps1"})
@@ -90,8 +99,17 @@ POST_APPROVAL_TAG_QUERY = (
 )
 
 
+def is_powershell_fence(info: str) -> bool:
+    info_words = info.strip().split(maxsplit=1)
+    return bool(
+        info_words
+        and unescape(info_words[0]).casefold() in POWERSHELL_FENCE_LANGUAGES
+    )
+
+
 def powershell_fence_bodies(text: str) -> list[str]:
     bodies = []
+    block_spans = []
     search_start = 0
     while opening := FENCE_OPENING.search(text, search_start):
         marker = opening["marker"]
@@ -112,14 +130,24 @@ def powershell_fence_bodies(text: str) -> list[str]:
             elif body.endswith(("\r", "\n")):
                 body = body[:-1]
 
-        info_words = info.strip().split(maxsplit=1)
-        if (
-            info_words
-            and info_words[0].casefold() in POWERSHELL_FENCE_LANGUAGES
-        ):
+        indent = len(opening["indent"])
+        if indent:
+            body = re.sub(rf"^ {{1,{indent}}}", "", body, flags=re.MULTILINE)
+
+        if is_powershell_fence(info):
             bodies.append(body)
 
-        search_start = closing.end() if closing else len(text)
+        block_end = closing.end() if closing else len(text)
+        block_spans.append((opening.start(), block_end))
+        search_start = block_end
+
+    for opening in NON_TOP_LEVEL_FENCE_OPENING.finditer(text):
+        if any(start <= opening.start() < end for start, end in block_spans):
+            continue
+        if is_powershell_fence(opening["info"]):
+            raise AssertionError(
+                "PowerShell fences outside the approved top-level form are not approved"
+            )
 
     return bodies
 
@@ -1955,23 +1983,36 @@ class ReleaseRunbookTests(unittest.TestCase):
                 ("extra tilde pwsh fence", "~~~", "pwsh"),
             )
         }
+        additional_fence_snippets = {
+            "pwsh fence with trailing info whitespace": (
+                '''```pwsh \nWrite-Output "unsafe untracked fence"\n```\n'''
+            ),
+            "ps1 fence with leading info whitespace": (
+                '''``` ps1\nWrite-Output "unsafe untracked fence"\n```\n'''
+            ),
+            "tilde powershell fence": (
+                '''~~~powershell\nWrite-Output "unsafe untracked fence"\n~~~\n'''
+            ),
+            "entity-encoded powershell fence": (
+                '''```power&#115;hell\nWrite-Output "unsafe untracked fence"\n```\n'''
+            ),
+            "blockquote powershell fence": (
+                '''> ```powershell\n> Write-Output "unsafe untracked fence"\n> ```\n'''
+            ),
+            "list-item pwsh fence": (
+                '''- ```pwsh\n  Write-Output "unsafe untracked fence"\n  ```\n'''
+            ),
+            "indented list-item pwsh fence": (
+                '''- item\n    ```pwsh\n    Write-Output "unsafe untracked fence"\n    ```\n'''
+            ),
+            "nested blockquote ps1 fence": (
+                '''> ~~~~Ps1\n> Write-Output "unsafe untracked fence"\n> ~~~~\n'''
+            ),
+        }
         unsafe_extra_fences.update(
             {
-                "pwsh fence with trailing info whitespace": (
-                    text
-                    + '''\n\n```pwsh \n'''
-                    + '''Write-Output "unsafe untracked fence"\n```\n'''
-                ),
-                "ps1 fence with leading info whitespace": (
-                    text
-                    + '''\n\n``` ps1\n'''
-                    + '''Write-Output "unsafe untracked fence"\n```\n'''
-                ),
-                "tilde powershell fence": (
-                    text
-                    + '''\n\n~~~powershell\n'''
-                    + '''Write-Output "unsafe untracked fence"\n~~~\n'''
-                ),
+                name: f"{text}\n\n{snippet}"
+                for name, snippet in additional_fence_snippets.items()
             }
         )
 
@@ -2028,6 +2069,36 @@ class ReleaseRunbookTests(unittest.TestCase):
             with self.subTest(mutation=name):
                 with self.assertRaises(AssertionError):
                     assert_runbook_contract(self, mutated)
+
+    def test_powershell_fence_extractor_normalises_commonmark_forms(self) -> None:
+        cases = {
+            "long indented fence": (
+                '''   ```` Ps1 extra\n'''
+                '''   Write-Output "dedented"\n'''
+                '''    Write-Output "one leading space"\n'''
+                '''   `````\n''',
+                'Write-Output "dedented"\n'
+                ' Write-Output "one leading space"',
+            ),
+            "entity-encoded language": (
+                '''~~~ power&#115;hell\tlinenums\n'''
+                '''Write-Output "decoded"\n'''
+                '''~~~~\n''',
+                'Write-Output "decoded"',
+            ),
+        }
+        for name, (source, expected_body) in cases.items():
+            with self.subTest(form=name):
+                self.assertEqual(powershell_fence_bodies(source), [expected_body])
+
+        generic_fence = (
+            '''````text\n'''
+            '''    ```powershell\n'''
+            '''    Write-Output "literal example"\n'''
+            '''    ```\n'''
+            '''````\n'''
+        )
+        self.assertEqual(powershell_fence_bodies(generic_fence), [])
 
     def test_runbook_contract_rejects_structural_bypasses(self) -> None:
         text = RUNBOOK.read_text(encoding="utf-8")
