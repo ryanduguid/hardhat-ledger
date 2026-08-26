@@ -1,6 +1,7 @@
 from pathlib import Path
 import base64
 import copy
+from hashlib import sha256
 import json
 import re
 import shutil
@@ -13,11 +14,14 @@ ROOT = Path(__file__).resolve().parents[1]
 RUNBOOK = ROOT / "RELEASING.md"
 EVIDENCE = ROOT / "docs" / "releases" / "v0.1.5.md"
 POWERSHELL = shutil.which("pwsh")
-FENCE = re.compile(
-    r"(?P<delimiter>```|~~~)(?:powershell|pwsh|ps1)"
-    r"(?:[ \t]+[^\r\n]*)?\r?\n"
-    r"(?P<code>.*?)\r?\n(?P=delimiter)",
-    re.DOTALL | re.IGNORECASE,
+FENCE_OPENING = re.compile(
+    r"^ {0,3}(?P<marker>`{3,}|~{3,})(?P<info>[^\r\n]*)(?:\r?\n|\Z)",
+    re.MULTILINE,
+)
+POWERSHELL_FENCE_LANGUAGES = frozenset({"powershell", "pwsh", "ps1"})
+# SHA-256 of compact UTF-8 JSON for the five ordered PowerShell fence bodies.
+APPROVED_POWERSHELL_FENCES_SHA256 = (
+    "ec22fc86dfaf1392709bff9f4c2252a03be688e4d6ff8f30e620428eb8bb818f"
 )
 EXPECTED_POWERSHELL_FENCES = 5
 POWERSHELL_VERSION_PREREQUISITE = (
@@ -84,6 +88,41 @@ POST_APPROVAL_TAG_ABSENCE_IF = """if ($postApprovalTag) {
 POST_APPROVAL_TAG_QUERY = (
     '$postApprovalTag = git ls-remote --tags origin "refs/tags/$releaseTag"'
 )
+
+
+def powershell_fence_bodies(text: str) -> list[str]:
+    bodies = []
+    search_start = 0
+    while opening := FENCE_OPENING.search(text, search_start):
+        marker = opening["marker"]
+        info = opening["info"]
+        if marker.startswith("`") and "`" in info:
+            search_start = opening.end()
+            continue
+
+        closing = re.compile(
+            rf"^ {{0,3}}{re.escape(marker[0])}{{{len(marker)},}}[ \t]*(?:\r?\n|\Z)",
+            re.MULTILINE,
+        ).search(text, opening.end())
+        body_end = closing.start() if closing else len(text)
+        body = text[opening.end() : body_end]
+        if closing:
+            if body.endswith("\r\n"):
+                body = body[:-2]
+            elif body.endswith(("\r", "\n")):
+                body = body[:-1]
+
+        info_words = info.strip().split(maxsplit=1)
+        if (
+            info_words
+            and info_words[0].casefold() in POWERSHELL_FENCE_LANGUAGES
+        ):
+            bodies.append(body)
+
+        search_start = closing.end() if closing else len(text)
+
+    return bodies
+
 
 POWERSHELL_AST_EVIDENCE = r'''$ErrorActionPreference = "Stop"
 $sources = @([Console]::In.ReadToEnd() | ConvertFrom-Json)
@@ -522,6 +561,21 @@ def powershell_ast_evidence(
 
 def normalise_powershell_reference(value: object) -> str:
     return re.sub(r"[^a-z0-9]", "", str(value).casefold())
+
+
+def assert_powershell_fence_snapshot(
+    testcase: unittest.TestCase, fences: list[str]
+) -> None:
+    testcase.assertEqual(len(fences), EXPECTED_POWERSHELL_FENCES)
+    payload = json.dumps(
+        fences,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    testcase.assertEqual(
+        sha256(payload).hexdigest(),
+        APPROVED_POWERSHELL_FENCES_SHA256,
+    )
 
 
 def normalise_powershell_command_name(value: object) -> str:
@@ -1276,7 +1330,7 @@ def assert_evidence_retention_contract(
     testcase.assertNotIn("throw", EVIDENCE_RETENTION_NOTICE)
 
     if ast is None:
-        fences = [match["code"] for match in FENCE.finditer(text)]
+        fences = powershell_fence_bodies(text)
         testcase.assertEqual(len(fences), EXPECTED_POWERSHELL_FENCES)
         ast = powershell_ast_evidence(testcase, fences)
     assert_release_verification_ast_contract(testcase, ast)
@@ -1299,8 +1353,8 @@ def assert_runbook_contract(testcase: unittest.TestCase, text: str) -> None:
     testcase.assertIn("$tagCommitSha -cne $approvedSha", text)
     testcase.assertIn("$remoteMainSha -cne $approvedSha", text)
 
-    fences = [match["code"] for match in FENCE.finditer(text)]
-    testcase.assertEqual(len(fences), EXPECTED_POWERSHELL_FENCES)
+    fences = powershell_fence_bodies(text)
+    assert_powershell_fence_snapshot(testcase, fences)
     testcase.assertTrue(fences[0].startswith(INITIAL_FENCE))
     ast = powershell_ast_evidence(testcase, fences)
     assert_evidence_retention_contract(testcase, text, ast)
@@ -1901,6 +1955,25 @@ class ReleaseRunbookTests(unittest.TestCase):
                 ("extra tilde pwsh fence", "~~~", "pwsh"),
             )
         }
+        unsafe_extra_fences.update(
+            {
+                "pwsh fence with trailing info whitespace": (
+                    text
+                    + '''\n\n```pwsh \n'''
+                    + '''Write-Output "unsafe untracked fence"\n```\n'''
+                ),
+                "ps1 fence with leading info whitespace": (
+                    text
+                    + '''\n\n``` ps1\n'''
+                    + '''Write-Output "unsafe untracked fence"\n```\n'''
+                ),
+                "tilde powershell fence": (
+                    text
+                    + '''\n\n~~~powershell\n'''
+                    + '''Write-Output "unsafe untracked fence"\n~~~\n'''
+                ),
+            }
+        )
 
         mutations = {
             "braced signer reassignment": braced_signer_reassignment,
@@ -2333,6 +2406,11 @@ $PSNativeCommandUseErrorActionPreference = $false'''
             )
             for name, snippet in preference_writer_snippets.items()
         }
+        for name, mutated in writer_mutations.items():
+            fences = powershell_fence_bodies(mutated)
+            with self.subTest(snapshot=name):
+                with self.assertRaises(AssertionError):
+                    assert_powershell_fence_snapshot(self, fences)
 
         before_download_snippets = {
             "braced early success assignment": (
@@ -2547,7 +2625,7 @@ if ((ConvertTo-Lf "body") -ceq (ConvertTo-Lf "changed")) { exit 3 }
     @unittest.skipUnless(POWERSHELL, "PowerShell 7 is required to parse release commands")
     def test_every_powershell_fence_parses(self) -> None:
         text = RUNBOOK.read_text(encoding="utf-8")
-        fences = [match["code"] for match in FENCE.finditer(text)]
+        fences = powershell_fence_bodies(text)
         self.assertEqual(len(fences), EXPECTED_POWERSHELL_FENCES)
         parser = r"""
 $source = [Console]::In.ReadToEnd()
