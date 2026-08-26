@@ -13,7 +13,10 @@ ROOT = Path(__file__).resolve().parents[1]
 RUNBOOK = ROOT / "RELEASING.md"
 EVIDENCE = ROOT / "docs" / "releases" / "v0.1.5.md"
 POWERSHELL = shutil.which("pwsh")
-FENCE = re.compile(r"```powershell\n(?P<code>.*?)\n```", re.DOTALL)
+FENCE = re.compile(
+    r"```(?:powershell|pwsh|ps1)\n(?P<code>.*?)\n```",
+    re.DOTALL | re.IGNORECASE,
+)
 # SHA-256 of compact UTF-8 JSON for the five ordered PowerShell fence bodies.
 APPROVED_POWERSHELL_FENCES_SHA256 = (
     "ec22fc86dfaf1392709bff9f4c2252a03be688e4d6ff8f30e620428eb8bb818f"
@@ -279,6 +282,7 @@ RELEASE_VERIFICATION_COMMANDS = (
 
 VERIFICATION_NOT_COMPLETE = "$verificationSucceeded = $false"
 VERIFICATION_COMPLETE = "$verificationSucceeded = $true"
+RELEASE_NOTES_CONDITION = "$releaseBodyLf -cne $expectedNotesLf"
 CLEANUP_SUCCESS_CONDITION = (
     "$verificationSucceeded -and (Test-Path -LiteralPath $downloadPath)"
 )
@@ -482,7 +486,7 @@ def assert_release_verification_ast_contract(
         for assignment in ast["assignments"]
         if assignment["fence"] == verification_fence
         and assignment["name"] is not None
-        and str(assignment["name"]).casefold()
+        and str(assignment["name"]).casefold().rsplit(":", 1)[-1]
         in {
             "erroractionpreference",
             "psnativecommanduseerroractionpreference",
@@ -573,6 +577,18 @@ def assert_release_verification_ast_contract(
             ["IfStatementAst", *condition["scope"]],
         )
 
+    notes_condition = only_ast_node(
+        testcase,
+        ast["conditions"],
+        fence=int(verification_fence) - 1,
+        condition=RELEASE_NOTES_CONDITION,
+    )
+    testcase.assertEqual(notes_condition["scope"], list(ROOT_EXECUTION_SCOPE))
+    assert_direct_throw(
+        notes_condition,
+        'throw "published notes differ from RELEASE_NOTES.md"',
+    )
+
     for expected_condition, expected_throw in (
         (
             SERVER_DIGEST_CONDITION,
@@ -662,11 +678,13 @@ def assert_release_verification_ast_contract(
         for assignment in ast["assignments"]
         if assignment["fence"] == verification_fence
         and assignment["name"] is not None
-        and str(assignment["name"]).casefold() in critical_assignment_counts
+        and str(assignment["name"]).casefold().rsplit(":", 1)[-1]
+        in critical_assignment_counts
     ]
     for assignment_name, expected_count in critical_assignment_counts.items():
         actual_count = sum(
-            str(assignment["name"]).casefold() == assignment_name
+            str(assignment["name"]).casefold().rsplit(":", 1)[-1]
+            == assignment_name
             for assignment in critical_assignments
         )
         testcase.assertEqual(actual_count, expected_count)
@@ -1237,11 +1255,23 @@ class ReleaseRunbookTests(unittest.TestCase):
             tag_query, "# " + tag_query, 1
         )
 
+        unsafe_extra_fences = {
+            f"extra {language} fence": (
+                text
+                + f'''\n\n```{language}\n'''
+                + '''$releaseTag = "v9.9.9"\n'''
+                + '''git tag -a $releaseTag HEAD -m $releaseTag\n'''
+                + '''git push origin "refs/tags/$releaseTag"\n```\n'''
+            )
+            for language in ("powershell", "pwsh", "ps1")
+        }
+
         mutations = {
             "braced signer reassignment": braced_signer_reassignment,
             "Set-Variable signer reassignment": command_signer_reassignment,
             "commented post-approval fetch": commented_post_approval_fetch,
             "commented candidate tag query": commented_candidate_tag_query,
+            **unsafe_extra_fences,
         }
         for name, mutated in mutations.items():
             with self.subTest(mutation=name):
@@ -1477,6 +1507,18 @@ class ReleaseRunbookTests(unittest.TestCase):
             "        )",
             1,
         )
+        notes_gate = '''if ($releaseBodyLf -cne $expectedNotesLf) {
+    throw "published notes differ from RELEASE_NOTES.md"
+}'''
+        self.assertEqual(text.count(notes_gate), 1)
+        proof_after_success_flag = text.replace(notes_gate, "", 1).replace(
+            "    " + VERIFICATION_COMPLETE,
+            "    "
+            + VERIFICATION_COMPLETE
+            + "\n"
+            + textwrap.indent(notes_gate, "    "),
+            1,
+        )
 
         writer_snippets = {
             "Set-Variable writer": (
@@ -1530,6 +1572,18 @@ class ReleaseRunbookTests(unittest.TestCase):
             ),
             "verification returns before proofs": "return",
             "verification trap continues after proof failures": "trap { continue }",
+            "global error preference is weakened": (
+                '$global:ErrorActionPreference = "SilentlyContinue"'
+            ),
+            "script error preference is weakened": (
+                '$script:ErrorActionPreference = "SilentlyContinue"'
+            ),
+            "global native preference is weakened": (
+                "$global:PSNativeCommandUseErrorActionPreference = $false"
+            ),
+            "script native preference is weakened": (
+                "$script:PSNativeCommandUseErrorActionPreference = $false"
+            ),
         }
         before_download_mutations = {
             name: text.replace(
@@ -1603,6 +1657,7 @@ class ReleaseRunbookTests(unittest.TestCase):
             "provenance proof follows success with comment spoof": (
                 proof_after_success
             ),
+            "notes proof follows success": proof_after_success_flag,
             "server digest failure is in an unreachable elseif": (
                 server_digest_throw_in_else_if
             ),
@@ -1647,6 +1702,20 @@ class ReleaseRunbookTests(unittest.TestCase):
             ),
             "cleanup containment checks a decoy path": (
                 mismatched_cleanup_data_flow
+            ),
+            "global cleanup path is substituted": text.replace(
+                "    " + VERIFICATION_COMPLETE,
+                "    "
+                + VERIFICATION_COMPLETE
+                + "\n    $global:downloadPath = $tempRoot",
+                1,
+            ),
+            "script cleanup path is substituted": text.replace(
+                "    " + VERIFICATION_COMPLETE,
+                "    "
+                + VERIFICATION_COMPLETE
+                + "\n    $script:downloadPath = $tempRoot",
+                1,
             ),
         }
 
