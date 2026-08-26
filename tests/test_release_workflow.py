@@ -1,6 +1,7 @@
-"""The release workflow is the shared archive policy plus the frozen-tag gate."""
+"""Test the thin caller activation adapter; exact-pinned shared skill-release policy owns frozen-tag refusal."""
 
 from pathlib import Path
+from copy import deepcopy
 import re
 import unittest
 
@@ -14,7 +15,73 @@ POLICY_CALL = re.compile(
 )
 
 
+def assert_workflow_contract(testcase, release_workflow, verify_workflow):
+    testcase.assertEqual(set(release_workflow["jobs"]), {"release"})
+    testcase.assertEqual(
+        set(verify_workflow["jobs"]),
+        {"verify", "shared-conformance"},
+    )
+
+    release = release_workflow["jobs"]["release"]
+    local_verify = verify_workflow["jobs"]["verify"]
+    shared = verify_workflow["jobs"]["shared-conformance"]
+
+    testcase.assertEqual(set(release), {"permissions", "uses", "with"})
+    testcase.assertEqual(set(local_verify), {"name", "runs-on", "steps"})
+    testcase.assertEqual(
+        set(shared),
+        {"name", "permissions", "uses", "with"},
+    )
+
+    testcase.assertEqual(
+        local_verify["steps"],
+        [
+            {
+                "name": "Check out source",
+                "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+                "with": {"persist-credentials": "false"},
+            },
+            {
+                "name": "Set up Python",
+                "uses": "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97",
+                "with": {"python-version": "3.12"},
+            },
+            {
+                "name": "Install test dependencies",
+                "run": "python -m pip install --disable-pip-version-check --no-deps --requirement requirements-test.txt",
+            },
+            {
+                "name": "Verify skill metadata",
+                "run": "python -m unittest discover -s tests -v",
+            },
+            {
+                "name": "Verify fabricated validation pack",
+                "run": "python scripts/validate_validation.py",
+            },
+            {
+                "name": "Verify Skills CLI discovery",
+                "run": "python tests/verify_skills_cli.py",
+            },
+        ],
+    )
+
+
 class ReleaseWorkflowTests(unittest.TestCase):
+    def _load_workflows(self):
+        release_workflow = yaml.load(
+            (ROOT / ".github" / "workflows" / "release.yml").read_text(
+                encoding="utf-8",
+            ),
+            Loader=yaml.BaseLoader,
+        )
+        verify_workflow = yaml.load(
+            (ROOT / ".github" / "workflows" / "verify.yml").read_text(
+                encoding="utf-8",
+            ),
+            Loader=yaml.BaseLoader,
+        )
+        return release_workflow, verify_workflow
+
     def test_workflows_use_the_exact_shared_skill_policy(self) -> None:
         self.assertRegex(EXPECTED_POLICY_SHA, r"^[0-9a-f]{40}$")
         release_workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
@@ -54,7 +121,11 @@ class ReleaseWorkflowTests(unittest.TestCase):
                 "skills-verification-mode": "subcontractor-accounting-v1",
             },
         )
-        self.assertEqual(set(verify["jobs"]), {"verify", "shared-conformance"})
+        assert_workflow_contract(
+            self,
+            yaml.load(release_workflow, Loader=yaml.BaseLoader),
+            verify,
+        )
         self.assertIn("pull_request", verify_workflow)
         self.assertIn("branches:\n      - main", verify_workflow)
 
@@ -99,16 +170,41 @@ class ReleaseWorkflowTests(unittest.TestCase):
             shared_conformance["with"],
             {"skills-verification-mode": "subcontractor-accounting-v1"},
         )
-        local_steps = "\n".join(step.get("run", "") for step in local_verify["steps"])
-        self.assertIn("actions/checkout", str(local_verify["steps"]))
-        self.assertIn(
-            {"python-version": "3.12"},
-            [step.get("with", {}) for step in local_verify["steps"]],
-        )
-        self.assertIn("requirements-test.txt", local_steps)
-        self.assertIn("unittest discover -s tests -v", local_steps)
-        self.assertIn("scripts/validate_validation.py", local_steps)
-        self.assertIn("tests/verify_skills_cli.py", local_steps)
+        assert_workflow_contract(self, release_workflow, verify_workflow)
+
+    def test_workflow_contract_rejects_activation_mutations(self) -> None:
+        release_workflow, verify_workflow = self._load_workflows()
+        assert_workflow_contract(self, release_workflow, verify_workflow)
+        mutations = {
+            "extra release job": lambda release, verify: release["jobs"].update(
+                {"renamed-frozen": {"runs-on": "ubuntu-latest", "steps": []}}
+            ),
+            "conditional release": lambda release, verify: release["jobs"]["release"].update(
+                {"if": "github.ref_name != 'v0.1.0'"}
+            ),
+            "masked release failure": lambda release, verify: release["jobs"]["release"].update(
+                {"continue-on-error": "true"}
+            ),
+            "conditional local verify": lambda release, verify: verify["jobs"]["verify"].update(
+                {"if": "success()"}
+            ),
+            "masked local verify failure": lambda release, verify: verify["jobs"]["verify"].update(
+                {"continue-on-error": "true"}
+            ),
+            "conditional shared verification": lambda release, verify: verify["jobs"]["shared-conformance"].update(
+                {"if": "success()"}
+            ),
+            "masked shared failure": lambda release, verify: verify["jobs"]["shared-conformance"].update(
+                {"continue-on-error": "true"}
+            ),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(mutation=name):
+                mutated_release = deepcopy(release_workflow)
+                mutated_verify = deepcopy(verify_workflow)
+                mutate(mutated_release, mutated_verify)
+                with self.assertRaises(AssertionError):
+                    assert_workflow_contract(self, mutated_release, mutated_verify)
 
 
 if __name__ == "__main__":
