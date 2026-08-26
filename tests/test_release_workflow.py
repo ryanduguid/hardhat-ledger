@@ -145,7 +145,6 @@ class ReleaseWorkflowTests(unittest.TestCase):
         release = release_workflow["jobs"]["release"]
         self.assertIn("shared-conformance", verify_workflow["jobs"])
         shared_conformance = verify_workflow["jobs"]["shared-conformance"]
-        local_verify = verify_workflow["jobs"]["verify"]
 
         for forbidden in ("steps", "runs-on", "env", "outputs", "secrets"):
             with self.subTest(job="release", forbidden=forbidden):
