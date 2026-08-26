@@ -1,6 +1,6 @@
 from pathlib import Path
+import base64
 import copy
-from hashlib import sha256
 import json
 import re
 import shutil
@@ -13,11 +13,13 @@ ROOT = Path(__file__).resolve().parents[1]
 RUNBOOK = ROOT / "RELEASING.md"
 EVIDENCE = ROOT / "docs" / "releases" / "v0.1.5.md"
 POWERSHELL = shutil.which("pwsh")
-FENCE = re.compile(r"```powershell\n(?P<code>.*?)\n```", re.DOTALL)
-# SHA-256 of compact UTF-8 JSON for the five ordered PowerShell fence bodies.
-APPROVED_POWERSHELL_FENCES_SHA256 = (
-    "ec22fc86dfaf1392709bff9f4c2252a03be688e4d6ff8f30e620428eb8bb818f"
+FENCE = re.compile(
+    r"(?P<delimiter>```|~~~)(?:powershell|pwsh|ps1)"
+    r"(?:[ \t]+[^\r\n]*)?\r?\n"
+    r"(?P<code>.*?)\r?\n(?P=delimiter)",
+    re.DOTALL | re.IGNORECASE,
 )
+EXPECTED_POWERSHELL_FENCES = 5
 POWERSHELL_VERSION_PREREQUISITE = (
     "Use a clean checkout of remote `main` and PowerShell 7.4 or newer."
 )
@@ -88,9 +90,14 @@ $sources = @([Console]::In.ReadToEnd() | ConvertFrom-Json)
 $assignments = [Collections.Generic.List[object]]::new()
 $commands = [Collections.Generic.List[object]]::new()
 $conditions = [Collections.Generic.List[object]]::new()
+$foreachStatements = [Collections.Generic.List[object]]::new()
+$functionDefinitions = [Collections.Generic.List[object]]::new()
 $invocations = [Collections.Generic.List[object]]::new()
+$mutatingUnaryExpressions = [Collections.Generic.List[object]]::new()
 $throws = [Collections.Generic.List[object]]::new()
 $terminators = [Collections.Generic.List[object]]::new()
+$redirections = [Collections.Generic.List[object]]::new()
+$tryStatements = [Collections.Generic.List[object]]::new()
 
 $scopePlumbingTypes = @("NamedBlockAst", "PipelineAst", "StatementBlockAst")
 
@@ -125,6 +132,16 @@ for ($fence = 0; $fence -lt $sources.Count; $fence++) {
         if ($node.Left -is [Management.Automation.Language.VariableExpressionAst]) {
             $name = $node.Left.VariablePath.UserPath
         }
+        $statementBlock = $node.Parent
+        while (
+            $null -ne $statementBlock -and
+            $statementBlock -isnot
+            [Management.Automation.Language.StatementBlockAst] -and
+            $statementBlock -isnot
+            [Management.Automation.Language.NamedBlockAst]
+        ) {
+            $statementBlock = $statementBlock.Parent
+        }
         $assignments.Add([pscustomobject]@{
             fence = $fence
             name = $name
@@ -132,6 +149,13 @@ for ($fence = 0; $fence -lt $sources.Count; $fence++) {
             start = $node.Extent.StartOffset
             end = $node.Extent.EndOffset
             scope = [object[]]@(Get-NonPlumbingAncestors $node)
+            lastInBlock = (
+                $null -ne $statementBlock -and
+                $statementBlock.Statements.Count -gt 0 -and
+                [object]::ReferenceEquals(
+                    $statementBlock.Statements[-1], $node
+                )
+            )
             topLevel = (
                 $node.Parent -is [Management.Automation.Language.NamedBlockAst] -and
                 $node.Parent.Parent -is
@@ -149,6 +173,15 @@ for ($fence = 0; $fence -lt $sources.Count; $fence++) {
         $commands.Add([pscustomobject]@{
             fence = $fence
             name = $commandName
+            invocationOperator = $node.InvocationOperator.ToString()
+            parameters = [object[]]@(
+                $node.CommandElements |
+                    Where-Object {
+                        $_ -is
+                        [Management.Automation.Language.CommandParameterAst]
+                    } |
+                    ForEach-Object { $_.ParameterName }
+            )
             text = $node.Extent.Text
             start = $node.Extent.StartOffset
             end = $node.Extent.EndOffset
@@ -160,6 +193,21 @@ for ($fence = 0; $fence -lt $sources.Count; $fence++) {
                 $node.Parent.Parent.Parent -is
                 [Management.Automation.Language.ScriptBlockAst]
             )
+        })
+    }
+
+    $functionNodes = $ast.FindAll({
+        param($node)
+        $node -is [Management.Automation.Language.FunctionDefinitionAst]
+    }, $true)
+    foreach ($node in $functionNodes) {
+        $functionDefinitions.Add([pscustomobject]@{
+            fence = $fence
+            name = $node.Name
+            text = $node.Extent.Text
+            start = $node.Extent.StartOffset
+            end = $node.Extent.EndOffset
+            scope = [object[]]@(Get-NonPlumbingAncestors $node)
         })
     }
 
@@ -180,6 +228,37 @@ for ($fence = 0; $fence -lt $sources.Count; $fence++) {
                 scope = [object[]]@(Get-NonPlumbingAncestors $node)
             })
         }
+    }
+
+    $foreachNodes = $ast.FindAll({
+        param($node)
+        $node -is [Management.Automation.Language.ForEachStatementAst]
+    }, $true)
+    foreach ($node in $foreachNodes) {
+        $foreachStatements.Add([pscustomobject]@{
+            fence = $fence
+            variable = $node.Variable.VariablePath.UserPath
+            text = $node.Extent.Text
+            start = $node.Extent.StartOffset
+            end = $node.Extent.EndOffset
+            scope = [object[]]@(Get-NonPlumbingAncestors $node)
+        })
+    }
+
+    $tryNodes = $ast.FindAll({
+        param($node)
+        $node -is [Management.Automation.Language.TryStatementAst]
+    }, $true)
+    foreach ($node in $tryNodes) {
+        $tryStatements.Add([pscustomobject]@{
+            fence = $fence
+            catchCount = $node.CatchClauses.Count
+            hasFinally = $null -ne $node.Finally
+            text = $node.Extent.Text
+            start = $node.Extent.StartOffset
+            end = $node.Extent.EndOffset
+            scope = [object[]]@(Get-NonPlumbingAncestors $node)
+        })
     }
 
     $invocationNodes = $ast.FindAll({
@@ -229,15 +308,55 @@ for ($fence = 0; $fence -lt $sources.Count; $fence++) {
             scope = [object[]]@(Get-NonPlumbingAncestors $node)
         })
     }
+
+    $mutatingUnaryNodes = $ast.FindAll({
+        param($node)
+        $node -is [Management.Automation.Language.UnaryExpressionAst] -and
+        $node.TokenKind.ToString() -in @(
+            "PostfixPlusPlus",
+            "PostfixMinusMinus",
+            "PrefixPlusPlus",
+            "PrefixMinusMinus"
+        )
+    }, $true)
+    foreach ($node in $mutatingUnaryNodes) {
+        $mutatingUnaryExpressions.Add([pscustomobject]@{
+            fence = $fence
+            kind = $node.TokenKind.ToString()
+            text = $node.Extent.Text
+            start = $node.Extent.StartOffset
+            end = $node.Extent.EndOffset
+            scope = [object[]]@(Get-NonPlumbingAncestors $node)
+        })
+    }
+
+    $redirectionNodes = $ast.FindAll({
+        param($node)
+        $node -is [Management.Automation.Language.RedirectionAst]
+    }, $true)
+    foreach ($node in $redirectionNodes) {
+        $redirections.Add([pscustomobject]@{
+            fence = $fence
+            text = $node.Extent.Text
+            start = $node.Extent.StartOffset
+            end = $node.Extent.EndOffset
+            scope = [object[]]@(Get-NonPlumbingAncestors $node)
+        })
+    }
 }
 
 [pscustomobject]@{
     assignments = [object[]]$assignments
     commands = [object[]]$commands
     conditions = [object[]]$conditions
+    foreachStatements = [object[]]$foreachStatements
+    functionDefinitions = [object[]]$functionDefinitions
     invocations = [object[]]$invocations
+    mutatingUnaryExpressions = [object[]]$mutatingUnaryExpressions
     throws = [object[]]$throws
     terminators = [object[]]$terminators
+    redirections = [object[]]$redirections
+    tryStatements = [object[]]$tryStatements
 } | ConvertTo-Json -Depth 5 -Compress
 '''
 
@@ -405,19 +524,8 @@ def normalise_powershell_reference(value: object) -> str:
     return re.sub(r"[^a-z0-9]", "", str(value).casefold())
 
 
-def assert_powershell_fence_snapshot(
-    testcase: unittest.TestCase, fences: list[str]
-) -> None:
-    testcase.assertEqual(len(fences), 5)
-    payload = json.dumps(
-        fences,
-        ensure_ascii=False,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    testcase.assertEqual(
-        sha256(payload).hexdigest(),
-        APPROVED_POWERSHELL_FENCES_SHA256,
-    )
+def normalise_powershell_command_name(value: object) -> str:
+    return str(value).casefold().rsplit("\\", 1)[-1]
 
 
 def only_ast_node(
@@ -465,6 +573,7 @@ def assert_release_verification_ast_contract(
         true_assignment["scope"],
         list(TRY_EXECUTION_SCOPE),
     )
+    testcase.assertTrue(true_assignment["lastInBlock"])
     verification_fence = true_assignment["fence"]
     testcase.assertEqual(false_assignment["fence"], verification_fence)
     verification_not_complete_end = int(false_assignment["end"])
@@ -473,22 +582,160 @@ def assert_release_verification_ast_contract(
     indirect_assignments = [
         assignment
         for assignment in ast["assignments"]
-        if assignment["fence"] == verification_fence
-        and assignment["name"] is None
+        if assignment["name"] is None
     ]
     testcase.assertEqual(indirect_assignments, [])
-    weakened_preferences = [
+
+    command_resolution_providers = {"alias", "env", "function"}
+    command_resolution_assignments = [
         assignment
         for assignment in ast["assignments"]
-        if assignment["fence"] == verification_fence
-        and assignment["name"] is not None
-        and str(assignment["name"]).casefold()
-        in {
-            "erroractionpreference",
-            "psnativecommanduseerroractionpreference",
-        }
+        if assignment["name"] is not None
+        and str(assignment["name"]).casefold().split(":", 1)[0]
+        in command_resolution_providers
     ]
-    testcase.assertEqual(weakened_preferences, [])
+    testcase.assertEqual(command_resolution_assignments, [])
+
+    immutable_identity_assignment_counts = {
+        "approvedsha": 1,
+        "confirmedapprovedsha": 1,
+        "expectedpolicysha": 1,
+        "protectedtags": 1,
+        "releasetag": 1,
+        "repo": 1,
+    }
+    for name, expected_count in immutable_identity_assignment_counts.items():
+        actual_count = sum(
+            assignment["name"] is not None
+            and str(assignment["name"]).casefold().rsplit(":", 1)[-1]
+            == name
+            for assignment in ast["assignments"]
+        )
+        testcase.assertEqual(actual_count, expected_count)
+
+    assignment_counts: dict[str, int] = {}
+    for assignment in ast["assignments"]:
+        if assignment["name"] is None:
+            continue
+        name = str(assignment["name"]).casefold().rsplit(":", 1)[-1]
+        assignment_counts[name] = assignment_counts.get(name, 0) + 1
+    expected_reassignment_counts = {
+        "downloaditem": 2,
+        "nativeerrorpreference": 3,
+        "psnativecommanduseerroractionpreference": 7,
+        "relativedownloadpath": 2,
+        "resolveddownloadpath": 2,
+        "temproot": 2,
+        "temprootitem": 2,
+        "verificationsucceeded": 2,
+    }
+    actual_reassignment_counts = {
+        name: count for name, count in assignment_counts.items() if count > 1
+    }
+    testcase.assertEqual(
+        actual_reassignment_counts,
+        expected_reassignment_counts,
+    )
+
+    expected_mutating_unary_expressions = [
+        (
+            verification_fence,
+            "PostfixPlusPlus",
+            text,
+            [
+                "CommandExpressionAst",
+                "ForEachStatementAst",
+                "TryStatementAst",
+                "ScriptBlockAst",
+            ],
+        )
+        for text in (
+            "$serverDigestChecks++",
+            "$payloadChecksumChecks++",
+        )
+    ]
+    actual_mutating_unary_expressions = [
+        (
+            int(expression["fence"]),
+            str(expression["kind"]),
+            str(expression["text"]),
+            expression["scope"],
+        )
+        for expression in ast["mutatingUnaryExpressions"]
+    ]
+    testcase.assertCountEqual(
+        actual_mutating_unary_expressions,
+        expected_mutating_unary_expressions,
+    )
+
+    actual_foreach_variables = [
+        (
+            int(statement["fence"]),
+            str(statement["variable"]).casefold(),
+        )
+        for statement in ast["foreachStatements"]
+    ]
+    expected_foreach_variables = [
+        (0, "requiredcheck"),
+        (verification_fence, "assetname"),
+        (verification_fence, "payloadname"),
+    ]
+    testcase.assertCountEqual(
+        actual_foreach_variables,
+        expected_foreach_variables,
+    )
+
+    root_condition_scope = tuple(ROOT_EXECUTION_SCOPE)
+    try_condition_scope = tuple(TRY_EXECUTION_SCOPE)
+    expected_condition_scopes_by_fence = (
+        sorted(
+            [root_condition_scope] * 11
+            + [("ForEachStatementAst", *root_condition_scope)]
+        ),
+        sorted([root_condition_scope] * 9),
+        sorted([root_condition_scope] * 5),
+        sorted(
+            [root_condition_scope] * 3
+            + [("ForEachStatementAst", *try_condition_scope)] * 4
+            + [try_condition_scope] * 4
+            + [("IfStatementAst", *try_condition_scope)] * 3
+        ),
+        sorted([root_condition_scope] * 8),
+    )
+    actual_condition_scopes_by_fence = tuple(
+        sorted(
+            tuple(condition["scope"])
+            for condition in ast["conditions"]
+            if int(condition["fence"]) == fence
+        )
+        for fence in range(EXPECTED_POWERSHELL_FENCES)
+    )
+    testcase.assertEqual(
+        actual_condition_scopes_by_fence,
+        expected_condition_scopes_by_fence,
+    )
+
+    non_throwing_conditions = {
+        (verification_fence, CLEANUP_SUCCESS_CONDITION),
+        (verification_fence, "-not $verificationSucceeded"),
+    }
+    for condition in ast["conditions"]:
+        direct_throws = [
+            throw
+            for throw in ast["throws"]
+            if throw["fence"] == condition["fence"]
+            and int(condition["bodyStart"]) < int(throw["start"])
+            and int(throw["end"]) < int(condition["bodyEnd"])
+            and throw["scope"] == ["IfStatementAst", *condition["scope"]]
+        ]
+        condition_key = (
+            int(condition["fence"]),
+            str(condition["condition"]),
+        )
+        expected_throw_count = (
+            0 if condition_key in non_throwing_conditions else 1
+        )
+        testcase.assertEqual(len(direct_throws), expected_throw_count)
 
     provider_assignment_references = [
         assignment
@@ -505,30 +752,261 @@ def assert_release_verification_ast_contract(
     ]
     testcase.assertEqual(provider_assignment_references, [])
 
-    variable_writer_commands = {
-        "new-item",
-        "new-variable",
-        "ni",
-        "nv",
-        "sc",
-        "set-content",
-        "set-item",
-        "set-variable",
-        "si",
-        "sv",
+    allowed_command_names_by_fence = (
+        {
+            "convertfrom-json",
+            "gh",
+            "git",
+            "python",
+            "where-object",
+        },
+        {"convertfrom-json", "gh", "git", "read-host"},
+        {
+            "compare-object",
+            "convertfrom-json",
+            "convertto-lf",
+            "foreach-object",
+            "get-content",
+            "gh",
+            "sort-object",
+        },
+        {
+            "get-content",
+            "get-filehash",
+            "get-item",
+            "gh",
+            "join-path",
+            "new-item",
+            "out-null",
+            "remove-item",
+            "test-path",
+            "where-object",
+        },
+        {"convertfrom-json", "gh"},
+    )
+    testcase.assertEqual(
+        len(allowed_command_names_by_fence),
+        EXPECTED_POWERSHELL_FENCES,
+    )
+    verification_commands = [
+        command
+        for command in ast["commands"]
+        if command["fence"] == verification_fence
+    ]
+    unexpected_commands = [
+        command
+        for command in ast["commands"]
+        if command["name"] is None
+        or normalise_powershell_command_name(command["name"])
+        not in allowed_command_names_by_fence[int(command["fence"])]
+    ]
+    testcase.assertEqual(unexpected_commands, [])
+
+    allowed_gh_operations = {
+        ("api",),
+        ("attestation", "verify"),
+        ("release", "download"),
+        ("release", "verify"),
+        ("release", "verify-asset"),
+        ("release", "view"),
     }
+    unsafe_gh_commands = []
+    for command in ast["commands"]:
+        if command["name"] is None or (
+            normalise_powershell_command_name(command["name"]) != "gh"
+        ):
+            continue
+        words = re.sub(r"`\r?\n[ \t]*", " ", str(command["text"])).split()
+        operation = tuple(word.casefold() for word in words[1:3])
+        if operation[:1] == ("api",):
+            operation = operation[:1]
+            api_parameters = {
+                str(parameter).casefold()
+                for parameter in command["parameters"]
+            }
+            if not api_parameters <= {"h", "jq"}:
+                unsafe_gh_commands.append(command)
+                continue
+        if operation not in allowed_gh_operations:
+            unsafe_gh_commands.append(command)
+    testcase.assertEqual(unsafe_gh_commands, [])
+
+    expected_function_definitions = [(2, "convertto-lf", NOTE_NORMALISER)]
+    actual_function_definitions = [
+        (
+            int(function["fence"]),
+            str(function["name"]).casefold(),
+            str(function["text"]),
+        )
+        for function in ast["functionDefinitions"]
+    ]
+    testcase.assertEqual(
+        actual_function_definitions,
+        expected_function_definitions,
+    )
+
+    expected_state_writer_commands = [
+        (
+            "new-item",
+            "New-Item -ItemType Directory -Path $resolvedDownloadPath",
+        ),
+        (
+            "remove-item",
+            "Remove-Item -LiteralPath $resolvedDownloadPath -Force -Recurse",
+        ),
+    ]
+    actual_state_writer_commands = [
+        (
+            normalise_powershell_command_name(command["name"]),
+            str(command["text"]),
+        )
+        for command in verification_commands
+        if command["name"] is not None
+        and normalise_powershell_command_name(command["name"])
+        in {"new-item", "remove-item"}
+    ]
+    testcase.assertCountEqual(
+        actual_state_writer_commands,
+        expected_state_writer_commands,
+    )
+    allowed_invocation_members_by_fence = (
+        {"matches"},
+        set(),
+        {"replace", "substring"},
+        {
+            "getfullpath",
+            "getrelativepath",
+            "gettemppath",
+            "ispathrooted",
+            "newguid",
+            "startswith",
+            "tolowerinvariant",
+            "tostring",
+            "trimend",
+            "writeline",
+        },
+        set(),
+    )
+    unexpected_invocations = [
+        invocation
+        for invocation in ast["invocations"]
+        if str(invocation["member"]).casefold()
+        not in allowed_invocation_members_by_fence[int(invocation["fence"])]
+    ]
+    testcase.assertEqual(unexpected_invocations, [])
+    state_writer_parameter_names = {
+        "errorvariable",
+        "informationvariable",
+        "outvariable",
+        "pipelinevariable",
+        "warningvariable",
+    }
+    state_writer_parameter_aliases = {"ev", "iv", "ov", "pv", "wv"}
+
+    def parameter_writes_state(value: object) -> bool:
+        parameter = str(value).casefold()
+        return parameter in state_writer_parameter_aliases or (
+            len(parameter) >= 3
+            and any(
+                name.startswith(parameter) for name in state_writer_parameter_names
+            )
+        )
+
+    state_writer_parameter_references = [
+        command
+        for command in ast["commands"]
+        if any(
+            parameter_writes_state(parameter)
+            for parameter in command["parameters"]
+        )
+    ]
+    testcase.assertEqual(state_writer_parameter_references, [])
+    expected_redirections = [
+        (
+            fence,
+            "2>&1",
+            [
+                "CommandAst",
+                "AssignmentStatementAst",
+                "TryStatementAst",
+                "ScriptBlockAst",
+            ],
+        )
+        for fence in (0, 1, 4)
+    ]
+    actual_redirections = [
+        (
+            int(redirection["fence"]),
+            str(redirection["text"]),
+            redirection["scope"],
+        )
+        for redirection in ast["redirections"]
+    ]
+    testcase.assertCountEqual(actual_redirections, expected_redirections)
+
+    preference_names = {
+        "erroractionpreference",
+        "psnativecommanduseerroractionpreference",
+    }
+    actual_preference_assignments = [
+        (
+            int(assignment["fence"]),
+            str(assignment["name"]).casefold().rsplit(":", 1)[-1],
+            str(assignment["text"]),
+            assignment["scope"],
+        )
+        for assignment in ast["assignments"]
+        if assignment["name"] is not None
+        and str(assignment["name"]).casefold().rsplit(":", 1)[-1]
+        in preference_names
+    ]
+    expected_preference_assignments = [
+        (
+            0,
+            "erroractionpreference",
+            '$ErrorActionPreference = "Stop"',
+            list(ROOT_EXECUTION_SCOPE),
+        ),
+        (
+            0,
+            "psnativecommanduseerroractionpreference",
+            "$PSNativeCommandUseErrorActionPreference = $true",
+            list(ROOT_EXECUTION_SCOPE),
+        ),
+        *[
+            (
+                fence,
+                "psnativecommanduseerroractionpreference",
+                text,
+                list(TRY_EXECUTION_SCOPE),
+            )
+            for fence in (0, 1, 4)
+            for text in (
+                "$PSNativeCommandUseErrorActionPreference = $false",
+                "$PSNativeCommandUseErrorActionPreference = "
+                "$nativeErrorPreference",
+            )
+        ],
+    ]
+    testcase.assertCountEqual(
+        actual_preference_assignments,
+        expected_preference_assignments,
+    )
+
+    dynamic_execution_commands = [
+        command
+        for command in ast["commands"]
+        if str(command["invocationOperator"]).casefold() != "unknown"
+    ]
+    testcase.assertEqual(dynamic_execution_commands, [])
+
     flag_command_references = [
         command
         for command in ast["commands"]
         if command["fence"] == verification_fence
         and verification_not_complete_end < int(command["start"])
         and (
-            (
-                command["name"] is not None
-                and str(command["name"]).casefold()
-                in variable_writer_commands
-            )
-            or "verificationsucceeded"
+            "verificationsucceeded"
             in normalise_powershell_reference(command["text"])
             or "variableverification"
             in normalise_powershell_reference(command["text"])
@@ -536,25 +1014,41 @@ def assert_release_verification_ast_contract(
     ]
     testcase.assertEqual(flag_command_references, [])
 
-    flag_invocation_references = [
-        invocation
-        for invocation in ast["invocations"]
-        if invocation["fence"] == verification_fence
-        and verification_not_complete_end < int(invocation["start"])
-        and (
-            str(invocation["member"]).casefold() == "set"
-            or "verificationsucceeded"
-            in normalise_powershell_reference(invocation["text"])
+    actual_terminators = [
+        (
+            int(terminator["fence"]),
+            str(terminator["kind"]),
+            str(terminator["text"]),
+            terminator["scope"],
+        )
+        for terminator in ast["terminators"]
+    ]
+    expected_terminators = [
+        (
+            2,
+            "ReturnStatementAst",
+            'return $Text.Replace("`r`n", "`n")',
+            ["ScriptBlockAst", "FunctionDefinitionAst", "ScriptBlockAst"],
         )
     ]
-    testcase.assertEqual(flag_invocation_references, [])
+    testcase.assertEqual(actual_terminators, expected_terminators)
 
-    verification_terminators = [
-        terminator
-        for terminator in ast["terminators"]
-        if terminator["fence"] == verification_fence
+    actual_try_shapes = [
+        (
+            int(statement["fence"]),
+            int(statement["catchCount"]),
+            bool(statement["hasFinally"]),
+        )
+        for statement in ast["tryStatements"]
     ]
-    testcase.assertEqual(verification_terminators, [])
+    expected_try_shapes = [
+        (0, 0, True),
+        (1, 0, True),
+        (verification_fence, 0, True),
+        (verification_fence, 1, False),
+        (4, 0, True),
+    ]
+    testcase.assertCountEqual(actual_try_shapes, expected_try_shapes)
 
     def assert_direct_throw(
         condition: dict[str, object], expected_throw: str
@@ -662,11 +1156,13 @@ def assert_release_verification_ast_contract(
         for assignment in ast["assignments"]
         if assignment["fence"] == verification_fence
         and assignment["name"] is not None
-        and str(assignment["name"]).casefold() in critical_assignment_counts
+        and str(assignment["name"]).casefold().rsplit(":", 1)[-1]
+        in critical_assignment_counts
     ]
     for assignment_name, expected_count in critical_assignment_counts.items():
         actual_count = sum(
-            str(assignment["name"]).casefold() == assignment_name
+            str(assignment["name"]).casefold().rsplit(":", 1)[-1]
+            == assignment_name
             for assignment in critical_assignments
         )
         testcase.assertEqual(actual_count, expected_count)
@@ -781,7 +1277,7 @@ def assert_evidence_retention_contract(
 
     if ast is None:
         fences = [match["code"] for match in FENCE.finditer(text)]
-        testcase.assertGreaterEqual(len(fences), 4)
+        testcase.assertEqual(len(fences), EXPECTED_POWERSHELL_FENCES)
         ast = powershell_ast_evidence(testcase, fences)
     assert_release_verification_ast_contract(testcase, ast)
 
@@ -804,11 +1300,10 @@ def assert_runbook_contract(testcase: unittest.TestCase, text: str) -> None:
     testcase.assertIn("$remoteMainSha -cne $approvedSha", text)
 
     fences = [match["code"] for match in FENCE.finditer(text)]
-    testcase.assertGreaterEqual(len(fences), 4)
+    testcase.assertEqual(len(fences), EXPECTED_POWERSHELL_FENCES)
     testcase.assertTrue(fences[0].startswith(INITIAL_FENCE))
     ast = powershell_ast_evidence(testcase, fences)
     assert_evidence_retention_contract(testcase, text, ast)
-    assert_powershell_fence_snapshot(testcase, fences)
     native_fail_closed = text.index("$PSNativeCommandUseErrorActionPreference = $true")
     first_native_command = min(text.index("git fetch"), text.index("gh api"))
     testcase.assertLess(native_fail_closed, first_native_command)
@@ -864,6 +1359,10 @@ def assert_runbook_contract(testcase: unittest.TestCase, text: str) -> None:
     ]
     testcase.assertEqual(len(approval_conditions), 1)
     approval_condition = approval_conditions[0]
+    testcase.assertEqual(
+        approval_condition["scope"],
+        list(ROOT_EXECUTION_SCOPE),
+    )
     approval_fence = approval_condition["fence"]
 
     fetch_commands = [
@@ -1237,11 +1736,220 @@ class ReleaseRunbookTests(unittest.TestCase):
             tag_query, "# " + tag_query, 1
         )
 
+        candidate_tag_query = (
+            '$candidateTag = git ls-remote --tags origin '
+            '"refs/tags/$releaseTag"'
+        )
+        pre_approval_tag_creation = text.replace(
+            candidate_tag_query,
+            'gh api --method POST "repos/$repo/git/refs" '
+            '-f "ref=refs/tags/$releaseTag" -f "sha=$approvedSha"\n'
+            + candidate_tag_query,
+            1,
+        )
+        pre_approval_command_lookup_hook = text.replace(
+            candidate_tag_query,
+            "$ExecutionContext.InvokeCommand.PreCommandLookupAction = { }\n"
+            + candidate_tag_query,
+            1,
+        )
+        pre_approval_trap = text.replace(
+            candidate_tag_query,
+            "trap { continue }\n" + candidate_tag_query,
+            1,
+        )
+        pre_approval_error_suppression = text.replace(
+            candidate_tag_query,
+            '$ErrorActionPreference = "SilentlyContinue"\n'
+            + candidate_tag_query,
+            1,
+        )
+        approval_prompt = (
+            'Read-Host "Re-enter the separately approved full commit SHA"'
+        )
+        approval_out_variable = text.replace(
+            approval_prompt,
+            approval_prompt + " -OutVariable approvedSha",
+            1,
+        )
+        approval_condition = "if ($confirmedApprovedSha -cne $approvedSha) {"
+        approval_gate = '''if ($confirmedApprovedSha -cne $approvedSha) {
+    throw "the separate approval does not match approvedSha"
+}'''
+        commented_approval_throw = text.replace(
+            '    throw "the separate approval does not match approvedSha"',
+            '    # throw "the separate approval does not match approvedSha"',
+            1,
+        )
+        caught_approval_gate = text.replace(
+            approval_gate,
+            "try {\n" + approval_gate + "\n} catch { }",
+            1,
+        )
+        conditional_approval_gate = text.replace(
+            approval_gate,
+            "if ($false) {\n" + approval_gate + "\n}",
+            1,
+        )
+        short_circuited_approval_gate = text.replace(
+            approval_gate,
+            "$false -and {\n" + approval_gate + "\n}",
+            1,
+        )
+        post_approval_immutable_gate = '''if (-not $postApprovalImmutableReleaseState.enabled) {
+    throw "immutable releases were disabled after approval"
+}'''
+        conditional_post_approval_immutable_gate = text.replace(
+            post_approval_immutable_gate,
+            "if ($false) {\n" + post_approval_immutable_gate + "\n}",
+            1,
+        )
+        approved_sha_reassignment = text.replace(
+            approval_condition,
+            "$approvedSha = $confirmedApprovedSha\n" + approval_condition,
+            1,
+        )
+        release_tag_reassignment = text.replace(
+            approval_condition,
+            '$releaseTag = "v9.9.9"\n' + approval_condition,
+            1,
+        )
+        server_digest_counter_reassignment = text.replace(
+            "    if ($serverDigestChecks -ne 4) {",
+            "    $serverDigestChecks = 4\n"
+            "    if ($serverDigestChecks -ne 4) {",
+            1,
+        )
+        server_digest_counter_increment = text.replace(
+            "    if ($serverDigestChecks -ne 4) {",
+            "    $serverDigestChecks++\n"
+            "    if ($serverDigestChecks -ne 4) {",
+            1,
+        )
+        verification_flag_increment = text.replace(
+            VERIFICATION_NOT_COMPLETE,
+            VERIFICATION_NOT_COMPLETE + "\n$verificationSucceeded++",
+            1,
+        )
+        verification_flag_foreach_write = text.replace(
+            VERIFICATION_NOT_COMPLETE,
+            VERIFICATION_NOT_COMPLETE
+            + "\nforeach ($verificationSucceeded in @($true)) { }",
+            1,
+        )
+        post_approval_variable_redirection = pre_approval + post_approval.replace(
+            fetch,
+            '("0" * 40) > variable:approvedSha\n' + fetch,
+            1,
+        )
+        gh_function_shadow = text.replace(
+            first_attestation,
+            "    function gh { }\n" + first_attestation,
+            1,
+        )
+        release_download = (
+            "    gh release download $releaseTag --repo $repo "
+            "--dir $resolvedDownloadPath"
+        )
+        forged_file_hash = '''    function Get-FileHash {
+        param([string]$LiteralPath)
+        $assetName = $LiteralPath -replace '^.*[\\/]'
+        [pscustomobject]@{ Hash = (($release.assets | Where-Object name -CEQ $assetName)[0].digest -replace '^sha256:') }
+    }
+'''
+        get_file_hash_function_shadow = text.replace(
+            release_download,
+            forged_file_hash + release_download,
+            1,
+        )
+        provider_shadows = {
+            "function provider shadows gh": "${function:gh} = { 'shadowed' }",
+            "alias provider shadows gh": "${alias:gh} = 'Write-Output'",
+            "environment provider redirects command lookup": (
+                "$env:PATH = 'C:\\unsafe;' + $env:PATH"
+            ),
+        }
+        provider_shadow_mutations = {
+            name: text.replace(
+                first_attestation,
+                "    " + assignment + "\n" + first_attestation,
+                1,
+            )
+            for name, assignment in provider_shadows.items()
+        }
+
+        unsafe_extra_fences = {
+            name: (
+                text
+                + f"\n\n{delimiter}{language}\n"
+                + '''$releaseTag = "v9.9.9"\n'''
+                + '''git tag -a $releaseTag HEAD -m $releaseTag\n'''
+                + 'git push origin "refs/tags/$releaseTag"\n'
+                + delimiter
+                + "\n"
+            )
+            for name, delimiter, language in (
+                ("extra powershell fence", "```", "powershell"),
+                ("extra pwsh fence", "```", "pwsh"),
+                ("extra ps1 fence", "```", "ps1"),
+                ("extra padded powershell fence", "```", "powershell   "),
+                (
+                    "extra attributed powershell fence",
+                    "```",
+                    'powershell title="unsafe"',
+                ),
+                ("extra tilde pwsh fence", "~~~", "pwsh"),
+            )
+        }
+
         mutations = {
             "braced signer reassignment": braced_signer_reassignment,
             "Set-Variable signer reassignment": command_signer_reassignment,
             "commented post-approval fetch": commented_post_approval_fetch,
             "commented candidate tag query": commented_candidate_tag_query,
+            "pre-approval gh API tag creation": pre_approval_tag_creation,
+            "pre-approval command lookup hook": (
+                pre_approval_command_lookup_hook
+            ),
+            "pre-approval trap continues after failures": pre_approval_trap,
+            "pre-approval error handling is weakened": (
+                pre_approval_error_suppression
+            ),
+            "approval prompt overwrites approved SHA": approval_out_variable,
+            "approval throw is only a comment": commented_approval_throw,
+            "approval failure is swallowed by catch": caught_approval_gate,
+            "approval guard is conditional": conditional_approval_gate,
+            "approval guard is short-circuited": short_circuited_approval_gate,
+            "post-approval immutable gate is conditional": (
+                conditional_post_approval_immutable_gate
+            ),
+            "approved SHA is reassigned after confirmation": (
+                approved_sha_reassignment
+            ),
+            "release tag is reassigned after validation": (
+                release_tag_reassignment
+            ),
+            "server digest counter is reassigned before its gate": (
+                server_digest_counter_reassignment
+            ),
+            "server digest counter is incremented before its gate": (
+                server_digest_counter_increment
+            ),
+            "verification flag is incremented before proofs": (
+                verification_flag_increment
+            ),
+            "foreach writes verification flag before proofs": (
+                verification_flag_foreach_write
+            ),
+            "post-approval redirection overwrites approved SHA": (
+                post_approval_variable_redirection
+            ),
+            "gh function shadows verification commands": gh_function_shadow,
+            "Get-FileHash function forges local digests": (
+                get_file_hash_function_shadow
+            ),
+            **provider_shadow_mutations,
+            **unsafe_extra_fences,
         }
         for name, mutated in mutations.items():
             with self.subTest(mutation=name):
@@ -1477,6 +2185,33 @@ class ReleaseRunbookTests(unittest.TestCase):
             "        )",
             1,
         )
+        notes_gate = '''if ($releaseBodyLf -cne $expectedNotesLf) {
+    throw "published notes differ from RELEASE_NOTES.md"
+}'''
+        self.assertEqual(text.count(notes_gate), 1)
+        proof_after_success_flag = text.replace(notes_gate, "", 1).replace(
+            "    " + VERIFICATION_COMPLETE,
+            "    "
+            + VERIFICATION_COMPLETE
+            + "\n"
+            + textwrap.indent(notes_gate, "    "),
+            1,
+        )
+        dynamic_payload = '''$verificationSucceeded = $true
+$ErrorActionPreference = "SilentlyContinue"
+$PSNativeCommandUseErrorActionPreference = $false'''
+        encoded_dynamic_payload = base64.b64encode(
+            dynamic_payload.encode("utf-8")
+        ).decode("ascii")
+        dot_sourced_dynamic_writer = (
+            ". ([ScriptBlock]::Create([Text.Encoding]::UTF8.GetString("
+            f'[Convert]::FromBase64String("{encoded_dynamic_payload}")'
+            ")))"
+        )
+
+        def character_built_name(value: str) -> str:
+            codepoints = ",".join(str(ord(character)) for character in value)
+            return f"(-join [char[]]({codepoints}))"
 
         writer_snippets = {
             "Set-Variable writer": (
@@ -1506,6 +2241,22 @@ class ReleaseRunbookTests(unittest.TestCase):
                 "$ExecutionContext.SessionState.PSVariable.Set("
                 "'verification' + 'Succeeded', $true)"
             ),
+            "encoded dot-sourced writer": dot_sourced_dynamic_writer,
+            "module-qualified character-built writer": (
+                "Microsoft.PowerShell.Utility\\Set-Variable -Name "
+                + character_built_name("verificationSucceeded")
+                + " -Value $true"
+            ),
+            "character-built OutVariable writer": (
+                "Write-Output $true -OutVariable "
+                + character_built_name("verificationSucceeded")
+                + " | Out-Null"
+            ),
+            "character-built redirection writer": (
+                "$statePath = 'Variable:' + "
+                + character_built_name("verificationSucceeded")
+                + "\n    Write-Output $true > $statePath"
+            ),
         }
         writer_mutations = {
             name: text.replace(
@@ -1515,11 +2266,73 @@ class ReleaseRunbookTests(unittest.TestCase):
             )
             for name, snippet in writer_snippets.items()
         }
-        for name, mutated in writer_mutations.items():
-            fences = [match["code"] for match in FENCE.finditer(mutated)]
-            with self.subTest(snapshot=name):
-                with self.assertRaises(AssertionError):
-                    assert_powershell_fence_snapshot(self, fences)
+        preference_writer_snippets = {
+            "Set-Variable weakens error preference before verification": (
+                "Set-Variable -Name ('ErrorAction' + 'Preference') "
+                "-Value 'SilentlyContinue'"
+            ),
+            "Set-Item weakens native preference before verification": (
+                "Set-Item -Path Variable:PSNativeCommandUseErrorActionPreference "
+                "-Value $false"
+            ),
+            "computed provider path weakens error preference": (
+                "$preferencePath = 'Variable:ErrorAction' + 'Preference'\n"
+                "Set-Item -Path $preferencePath -Value 'SilentlyContinue'"
+            ),
+            "SessionState weakens error preference before verification": (
+                "$ExecutionContext.SessionState.PSVariable.Set("
+                "'ErrorAction' + 'Preference', 'SilentlyContinue')"
+            ),
+            "qualified Set-Variable weakens error preference": (
+                "Microsoft.PowerShell.Utility\\Set-Variable -Name "
+                + character_built_name("ErrorActionPreference")
+                + " -Value 'SilentlyContinue'"
+            ),
+            "qualified New-Item weakens native preference": (
+                "Microsoft.PowerShell.Management\\New-Item -Path "
+                "('Variable:' + "
+                + character_built_name(
+                    "PSNativeCommandUseErrorActionPreference"
+                )
+                + ") -Value $false -Force | Out-Null"
+            ),
+            "character-built SessionState preference writer": (
+                "$ExecutionContext.SessionState.PSVariable.Set("
+                + character_built_name("ErrorActionPreference")
+                + ", 'SilentlyContinue')"
+            ),
+            "qualified Remove-Item removes native preference": (
+                "Microsoft.PowerShell.Management\\Remove-Item -LiteralPath "
+                "('Variable:' + "
+                + character_built_name(
+                    "PSNativeCommandUseErrorActionPreference"
+                )
+                + ")"
+            ),
+            "qualified Copy-Item weakens native preference": (
+                "Microsoft.PowerShell.Management\\Copy-Item -LiteralPath "
+                "Variable:WhatIfPreference -Destination ('Variable:' + "
+                + character_built_name(
+                    "PSNativeCommandUseErrorActionPreference"
+                )
+                + ")"
+            ),
+            "SessionState removes native preference": (
+                "$ExecutionContext.SessionState.PSVariable.Remove("
+                + character_built_name(
+                    "PSNativeCommandUseErrorActionPreference"
+                )
+                + ")"
+            ),
+        }
+        preference_writer_mutations = {
+            name: text.replace(
+                VERIFICATION_NOT_COMPLETE,
+                snippet + "\n" + VERIFICATION_NOT_COMPLETE,
+                1,
+            )
+            for name, snippet in preference_writer_snippets.items()
+        }
 
         before_download_snippets = {
             "braced early success assignment": (
@@ -1530,6 +2343,18 @@ class ReleaseRunbookTests(unittest.TestCase):
             ),
             "verification returns before proofs": "return",
             "verification trap continues after proof failures": "trap { continue }",
+            "global error preference is weakened": (
+                '$global:ErrorActionPreference = "SilentlyContinue"'
+            ),
+            "script error preference is weakened": (
+                '$script:ErrorActionPreference = "SilentlyContinue"'
+            ),
+            "global native preference is weakened": (
+                "$global:PSNativeCommandUseErrorActionPreference = $false"
+            ),
+            "script native preference is weakened": (
+                "$script:PSNativeCommandUseErrorActionPreference = $false"
+            ),
         }
         before_download_mutations = {
             name: text.replace(
@@ -1589,6 +2414,8 @@ class ReleaseRunbookTests(unittest.TestCase):
         }
 
         mutations = {
+            **writer_mutations,
+            **preference_writer_mutations,
             **before_download_mutations,
             **conditional_mutations,
             **short_circuit_mutations,
@@ -1603,6 +2430,7 @@ class ReleaseRunbookTests(unittest.TestCase):
             "provenance proof follows success with comment spoof": (
                 proof_after_success
             ),
+            "notes proof follows success": proof_after_success_flag,
             "server digest failure is in an unreachable elseif": (
                 server_digest_throw_in_else_if
             ),
@@ -1647,6 +2475,20 @@ class ReleaseRunbookTests(unittest.TestCase):
             ),
             "cleanup containment checks a decoy path": (
                 mismatched_cleanup_data_flow
+            ),
+            "global cleanup path is substituted": text.replace(
+                "    " + VERIFICATION_COMPLETE,
+                "    "
+                + VERIFICATION_COMPLETE
+                + "\n    $global:downloadPath = $tempRoot",
+                1,
+            ),
+            "script cleanup path is substituted": text.replace(
+                "    " + VERIFICATION_COMPLETE,
+                "    "
+                + VERIFICATION_COMPLETE
+                + "\n    $script:downloadPath = $tempRoot",
+                1,
             ),
         }
 
@@ -1706,7 +2548,7 @@ if ((ConvertTo-Lf "body") -ceq (ConvertTo-Lf "changed")) { exit 3 }
     def test_every_powershell_fence_parses(self) -> None:
         text = RUNBOOK.read_text(encoding="utf-8")
         fences = [match["code"] for match in FENCE.finditer(text)]
-        self.assertGreaterEqual(len(fences), 4)
+        self.assertEqual(len(fences), EXPECTED_POWERSHELL_FENCES)
         parser = r"""
 $source = [Console]::In.ReadToEnd()
 $tokens = $null
