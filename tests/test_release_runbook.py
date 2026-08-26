@@ -7,6 +7,7 @@ import json
 import re
 import shutil
 import subprocess
+import sys
 import textwrap
 import unittest
 
@@ -20,12 +21,8 @@ FENCE_OPENING = re.compile(
     r"(?P<info>[^\r\n]*)(?:\r?\n|\Z)",
     re.MULTILINE,
 )
-NON_TOP_LEVEL_FENCE_OPENING = re.compile(
-    r"^(?:(?:(?:[ \t]*>[ \t]?)|"
-    r"(?:[ \t]*(?:[-+*]|\d{1,9}[.)])[ \t]+))+[ \t]*|[ \t]+)"
-    r"(?P<marker>`{3,}|~{3,})"
-    r"(?P<info>[^\r\n]*)(?:\r?\n|\Z)",
-    re.MULTILINE,
+FENCE_SUFFIX = re.compile(
+    r"(?P<marker>`{3,}|~{3,})(?P<info>[^\r\n]*)\Z",
 )
 POWERSHELL_FENCE_LANGUAGES = frozenset({"powershell", "pwsh", "ps1"})
 # SHA-256 of compact UTF-8 JSON for the five ordered PowerShell fence bodies.
@@ -107,6 +104,53 @@ def is_powershell_fence(info: str) -> bool:
     )
 
 
+def non_top_level_fence_openings(text: str) -> list[tuple[int, str]]:
+    candidates = []
+    line_start = 0
+    for raw_line in text.split("\n"):
+        line = raw_line[:-1] if raw_line.endswith("\r") else raw_line
+        position = 0
+        while True:
+            while position < len(line) and line[position] in " \t":
+                position += 1
+
+            if position < len(line) and line[position] == ">":
+                position += 1
+                if position < len(line) and line[position] in " \t":
+                    position += 1
+                continue
+
+            marker_end = None
+            if position < len(line) and line[position] in "-+*":
+                marker_end = position + 1
+            else:
+                digit_end = position
+                while digit_end < len(line) and line[digit_end].isdecimal():
+                    digit_end += 1
+                if (
+                    1 <= digit_end - position <= 9
+                    and digit_end < len(line)
+                    and line[digit_end] in ".)"
+                ):
+                    marker_end = digit_end + 1
+
+            if (
+                marker_end is not None
+                and marker_end < len(line)
+                and line[marker_end] in " \t"
+            ):
+                position = marker_end + 1
+                continue
+            break
+
+        if position:
+            opening = FENCE_SUFFIX.match(line, position)
+            if opening:
+                candidates.append((line_start, opening["info"]))
+        line_start += len(raw_line) + 1
+    return candidates
+
+
 def powershell_fence_bodies(text: str) -> list[str]:
     bodies = []
     powershell_opening_offsets = set()
@@ -141,15 +185,23 @@ def powershell_fence_bodies(text: str) -> list[str]:
         block_end = closing.end() if closing else len(text)
         search_start = block_end
 
-    for opening_pattern in (FENCE_OPENING, NON_TOP_LEVEL_FENCE_OPENING):
-        for candidate in opening_pattern.finditer(text):
-            if not is_powershell_fence(candidate["info"]):
-                continue
-            if candidate.start() in powershell_opening_offsets:
-                continue
-            raise AssertionError(
-                "PowerShell fence is not part of the approved executable block set"
-            )
+    for candidate in FENCE_OPENING.finditer(text):
+        if not is_powershell_fence(candidate["info"]):
+            continue
+        if candidate.start() in powershell_opening_offsets:
+            continue
+        raise AssertionError(
+            "PowerShell fence is not part of the approved executable block set"
+        )
+
+    for candidate_start, info in non_top_level_fence_openings(text):
+        if not is_powershell_fence(info):
+            continue
+        if candidate_start in powershell_opening_offsets:
+            continue
+        raise AssertionError(
+            "PowerShell fence is not part of the approved executable block set"
+        )
 
     return bodies
 
@@ -2143,6 +2195,35 @@ class ReleaseRunbookTests(unittest.TestCase):
             '''```\n'''
         )
         self.assertEqual(powershell_fence_bodies(double_encoded_info), [])
+
+    def test_powershell_fence_extractor_avoids_prefix_backtracking(self) -> None:
+        child = r'''
+import importlib.util
+import sys
+
+spec = importlib.util.spec_from_file_location("release_runbook_test", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+module.powershell_fence_bodies(sys.stdin.read())
+'''
+        cases = {
+            "quote prefixes": ">" + "\t>" * 30 + "x\n",
+            "list prefixes": "*" + "\t\t*" * 30 + "x\n",
+        }
+        for name, source in cases.items():
+            with self.subTest(form=name):
+                try:
+                    result = subprocess.run(
+                        [sys.executable, "-c", child, __file__],
+                        input=source,
+                        text=True,
+                        capture_output=True,
+                        check=False,
+                        timeout=3,
+                    )
+                except subprocess.TimeoutExpired:
+                    self.fail("container-prefix parsing exceeded three seconds")
+                self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_runbook_contract_rejects_structural_bypasses(self) -> None:
         text = RUNBOOK.read_text(encoding="utf-8")
