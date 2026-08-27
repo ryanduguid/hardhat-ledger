@@ -1,7 +1,8 @@
 """Test the thin caller activation adapter; exact-pinned shared skill-release policy owns frozen-tag refusal."""
 
-from pathlib import Path
 from copy import deepcopy
+from fnmatch import fnmatchcase
+from pathlib import Path
 import re
 import unittest
 
@@ -12,6 +13,10 @@ EXPECTED_POLICY_SHA = "d08de09646fc46b43d3e59394105005c123496bb"
 POLICY_CALL = re.compile(
     r"ryanduguid/release-policy/\.github/workflows/"
     r"(?P<workflow>verify-skills|release-skills)\.yml@(?P<sha>[0-9a-f]{40})"
+)
+RELEASE_POLICY_DEPENDENCIES = (
+    "ryanduguid/release-policy/.github/workflows/release-skills.yml",
+    "ryanduguid/release-policy/.github/workflows/verify-skills.yml",
 )
 
 
@@ -128,6 +133,52 @@ class ReleaseWorkflowTests(unittest.TestCase):
         )
         self.assertIn("pull_request", verify_workflow)
         self.assertIn("branches:\n      - main", verify_workflow)
+
+    def test_dependabot_groups_release_policy_workflows_atomically(self) -> None:
+        config = yaml.safe_load(
+            (ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8")
+        )
+        github_actions = [
+            update
+            for update in config["updates"]
+            if update["package-ecosystem"] == "github-actions"
+            and update["directory"] == "/"
+        ]
+
+        self.assertEqual(len(github_actions), 1)
+        self.assertIn("groups", github_actions[0])
+        groups = github_actions[0]["groups"]
+        matches = {
+            dependency: [
+                name
+                for name, rule in groups.items()
+                if any(
+                    fnmatchcase(dependency, pattern)
+                    for pattern in rule.get("patterns", [])
+                )
+            ]
+            for dependency in RELEASE_POLICY_DEPENDENCIES
+        }
+
+        self.assertEqual(
+            matches,
+            {
+                dependency: ["release-policy-workflows"]
+                for dependency in RELEASE_POLICY_DEPENDENCIES
+            },
+        )
+        group = groups["release-policy-workflows"]
+        self.assertEqual(group["applies-to"], "version-updates")
+        self.assertEqual(
+            group["patterns"],
+            ["ryanduguid/release-policy/.github/workflows/*"],
+        )
+        self.assertFalse(
+            any(
+                fnmatchcase("actions/checkout", pattern)
+                for pattern in group["patterns"]
+            )
+        )
 
     def test_privileged_release_job_delegates_without_local_steps(self) -> None:
         release_workflow = yaml.load(

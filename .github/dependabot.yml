@@ -4,5 +4,10 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    groups:
+      release-policy-workflows:
+        applies-to: version-updates
+        patterns:
+          - "ryanduguid/release-policy/.github/workflows/*"
     cooldown:
       default-days: 7
