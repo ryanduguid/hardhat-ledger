@@ -148,6 +148,8 @@ skill is used.
 
 ## Releases and provenance
 
+The repository's [GitHub Releases](https://github.com/ryanduguid/hardhat-ledger/releases) page is the canonical release history. A separate changelog is intentionally not maintained.
+
 Releases package all 10 discoverable skills and the marketplace metadata as
 deterministic UTC/LF source archives. Each release includes SHA-256 checksums,
 an SPDX 2.3 SBOM, and GitHub build and SBOM attestations. The marketplace
