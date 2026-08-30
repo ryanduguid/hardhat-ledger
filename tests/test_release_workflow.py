@@ -134,7 +134,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("pull_request", verify_workflow)
         self.assertIn("branches:\n      - main", verify_workflow)
 
-    def test_dependabot_groups_release_policy_workflows_atomically(self) -> None:
+    def test_dependabot_ignores_release_policy_workflow_bumps(self) -> None:
         config = yaml.safe_load(
             (ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8")
         )
@@ -146,38 +146,22 @@ class ReleaseWorkflowTests(unittest.TestCase):
         ]
 
         self.assertEqual(len(github_actions), 1)
-        self.assertIn("groups", github_actions[0])
-        groups = github_actions[0]["groups"]
-        matches = {
-            dependency: [
-                name
-                for name, rule in groups.items()
-                if any(
-                    fnmatchcase(dependency, pattern)
-                    for pattern in rule.get("patterns", [])
-                )
-            ]
-            for dependency in RELEASE_POLICY_DEPENDENCIES
-        }
-
+        self.assertNotIn("groups", github_actions[0])
+        patterns = [
+            rule["dependency-name"]
+            for rule in github_actions[0].get("ignore", [])
+        ]
         self.assertEqual(
-            matches,
-            {
-                dependency: ["release-policy-workflows"]
-                for dependency in RELEASE_POLICY_DEPENDENCIES
-            },
-        )
-        group = groups["release-policy-workflows"]
-        self.assertEqual(group["applies-to"], "version-updates")
-        self.assertEqual(
-            group["patterns"],
+            patterns,
             ["ryanduguid/release-policy/.github/workflows/*"],
         )
+        for dependency in RELEASE_POLICY_DEPENDENCIES:
+            with self.subTest(dependency=dependency):
+                self.assertTrue(
+                    any(fnmatchcase(dependency, pattern) for pattern in patterns)
+                )
         self.assertFalse(
-            any(
-                fnmatchcase("actions/checkout", pattern)
-                for pattern in group["patterns"]
-            )
+            any(fnmatchcase("actions/checkout", pattern) for pattern in patterns)
         )
 
     def test_privileged_release_job_delegates_without_local_steps(self) -> None:
