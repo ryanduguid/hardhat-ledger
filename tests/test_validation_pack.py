@@ -234,11 +234,13 @@ class SafetyControlTests(unittest.TestCase):
                 self.assertIsNotNone(
                     validator.SENSITIVE_PATTERNS[label].search(scan_text)
                 )
-        self.assertIsNotNone(
-            validator.DATED_RULE.search(
-                validator.normalise_for_sensitive_scan("effective 1 July 2026")
-            )
-        )
+        for dated in ("effective 1 July 2026", "The levy is charged from 2.7%."):
+            with self.subTest(dated=dated):
+                self.assertIsNotNone(
+                    validator.DATED_RULE.search(
+                        validator.normalise_for_sensitive_scan(dated)
+                    )
+                )
 
     def test_sensitive_scan_exposes_rendered_markdown_and_entity_obfuscation(self) -> None:
         adverse = {

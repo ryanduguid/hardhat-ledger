@@ -32,7 +32,8 @@ APPROVED_POWERSHELL_FENCES_SHA256 = (
 )
 EXPECTED_POWERSHELL_FENCES = 5
 POWERSHELL_VERSION_PREREQUISITE = (
-    "Use a clean checkout of remote `main` and PowerShell 7.4 or newer."
+    "Run every block below in one PowerShell 7.4 or newer session on a clean "
+    "checkout of remote `main`."
 )
 POWERSHELL_VERSION_GATE = r'''if ($PSVersionTable.PSVersion -lt [version]"7.4") {
     throw "PowerShell 7.4 or newer is required"
@@ -2297,11 +2298,7 @@ module.powershell_fence_bodies(sys.stdin.read())
 
     def test_powershell_version_gate_is_exact_and_fail_closed(self) -> None:
         text = RUNBOOK.read_text(encoding="utf-8")
-        candidate = text.replace(
-            "Use a clean checkout of remote `main` and one PowerShell 7 session.",
-            POWERSHELL_VERSION_PREREQUISITE,
-            1,
-        )
+        candidate = text
         if POWERSHELL_VERSION_GATE not in candidate:
             candidate = candidate.replace(
                 "$PSNativeCommandUseErrorActionPreference = $true\n",
