@@ -22,7 +22,7 @@ ineligible release candidates.
 
 ## Future release procedure
 
-Use a clean checkout of remote `main` and PowerShell 7.4 or newer. Do not
+Run every block below in one PowerShell 7.4 or newer session on a clean checkout of remote `main`; blocks 2 to 5 rely on variables and error preferences set in block 1. Do not
 build or upload release assets locally. The caller's single privileged job
 must delegate to the full-commit-pinned `release-skills.yml`; read-only local
 and shared verification must complete before the tag is approved.

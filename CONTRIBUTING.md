@@ -35,7 +35,8 @@ professional judgement starts. Nothing here is tax, accounting or legal advice.
 
 ## Local verification
 
-Python 3.10 or newer. The tests need the packages pinned in
+Python 3.10 or newer, plus PowerShell 7.4 or newer (`pwsh`) for the
+release-runbook tests. The tests need the packages pinned in
 [requirements-test.txt](requirements-test.txt).
 
 ```bash
