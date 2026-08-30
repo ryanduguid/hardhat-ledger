@@ -22,7 +22,7 @@ ineligible release candidates.
 
 ## Future release procedure
 
-Use a clean checkout of remote `main` and PowerShell 7.4 or newer. Do not
+Run every block below in one PowerShell 7.4 or newer session on a clean checkout of remote `main`. Blocks 2 to 5 rely on variables and error preferences set in block 1, and the local gates in block 1 also need Python with requirements-test.txt installed and Node.js (`npx`) with network access for the Skills CLI check. Do not
 build or upload release assets locally. The caller's single privileged job
 must delegate to the full-commit-pinned `release-skills.yml`; read-only local
 and shared verification must complete before the tag is approved.

@@ -87,7 +87,7 @@ SENSITIVE_PATTERNS = {
 }
 DATED_RULE = re.compile(
     r"\b(?:from|effective|due(?:\s+by)?|deadline)\s+"
-    r"(?:\d{1,2}\s+[A-Z][a-z]+\s+20\d{2}|\d+(?:\.\d+)?%)\b",
+    r"(?:\d{1,2}\s+[A-Z][a-z]+\s+20\d{2}\b|\d+(?:\.\d+)?%)",
     re.I,
 )
 
