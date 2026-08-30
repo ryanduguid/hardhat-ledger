@@ -33,8 +33,7 @@ APPROVED_POWERSHELL_FENCES_SHA256 = (
 EXPECTED_POWERSHELL_FENCES = 5
 POWERSHELL_VERSION_PREREQUISITE = (
     "Run every block below in one PowerShell 7.4 or newer session on a clean "
-    "checkout of remote `main`; blocks 2 to 5 rely on variables and error "
-    "preferences set in block 1."
+    "checkout of remote `main`."
 )
 POWERSHELL_VERSION_GATE = r'''if ($PSVersionTable.PSVersion -lt [version]"7.4") {
     throw "PowerShell 7.4 or newer is required"
