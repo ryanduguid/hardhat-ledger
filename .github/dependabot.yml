@@ -14,3 +14,9 @@ updates:
       # and sit red forever. Pin drift is tracked by release-policy's canary
       # audit instead.
       - dependency-name: "ryanduguid/release-policy/.github/workflows/*"
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
