@@ -83,7 +83,7 @@ class PluginManifestTests(unittest.TestCase):
     def test_concrete_manifest_versions_match_the_release_version(self) -> None:
         version = (REPOSITORY / "VERSION").read_text(encoding="utf-8").strip()
         self.assertRegex(version, r"^[0-9]+\.[0-9]+\.[0-9]+$")
-        self.assertEqual(version, "0.1.5")
+        self.assertEqual(version, "0.1.6")
         recovery_notes = (REPOSITORY / "docs" / "releases" / "v0.1.5.md").read_text(
             encoding="utf-8"
         )
@@ -100,6 +100,47 @@ class PluginManifestTests(unittest.TestCase):
                 manifest = load_json(PLUGIN_ROOT / runtime / "plugin.json")
                 self.assertEqual(manifest["name"], PLUGIN_NAME)
                 self.assertEqual(manifest["version"], version)
+
+    def test_deprecation_release_routes_new_installs_and_preserves_rollback(self) -> None:
+        readme = (REPOSITORY / "README.md").read_text(encoding="utf-8")
+        transition = (REPOSITORY / "docs" / "consolidation-transition.md").read_text(
+            encoding="utf-8"
+        )
+        release_notes = (REPOSITORY / "RELEASE_NOTES.md").read_text(encoding="utf-8")
+
+        for command in (
+            "/plugin marketplace add ryanduguid/australian-accounting-skills",
+            "/plugin install australian-accounting-skills@ryanduguid",
+            "codex plugin marketplace add ryanduguid/australian-accounting-skills",
+            "codex plugin add australian-accounting-skills@ryanduguid",
+            "npx skills add ryanduguid/australian-accounting-skills",
+        ):
+            self.assertIn(command, readme)
+        self.assertIn("Never enable both packs at once", readme)
+        self.assertIn(
+            "https://github.com/ryanduguid/hardhat-ledger/releases/tag/v0.1.5",
+            readme,
+        )
+        self.assertIn(
+            "https://github.com/ryanduguid/australian-accounting-skills/releases/tag/v0.2.0",
+            readme,
+        )
+        self.assertIn("The replacement is publicly verified", transition)
+        self.assertIn("No skill or accounting content changed", release_notes)
+
+        manifests = (
+            load_json(REPOSITORY / ".claude-plugin" / "marketplace.json")["plugins"][0],
+            load_json(PLUGIN_ROOT / ".claude-plugin" / "plugin.json"),
+            load_json(PLUGIN_ROOT / ".codex-plugin" / "plugin.json"),
+        )
+        for manifest in manifests:
+            with self.subTest(manifest=manifest["name"]):
+                self.assertIn("Deprecated", manifest["description"])
+                self.assertIn("australian-accounting-skills", manifest["description"])
+        generic_marketplace = load_json(
+            REPOSITORY / ".agents" / "plugins" / "marketplace.json"
+        )
+        self.assertIn("Deprecated", generic_marketplace["interface"]["displayName"])
 
     def test_codex_manifest_uses_supported_portable_fields(self) -> None:
         manifest = load_json(PLUGIN_ROOT / ".codex-plugin" / "plugin.json")

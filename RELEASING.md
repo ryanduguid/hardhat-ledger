@@ -43,7 +43,7 @@ if ($PSVersionTable.PSVersion -lt [version]"7.4") {
 }
 $repo = "ryanduguid/hardhat-ledger"
 $releaseTag = "v0.1.6" # Replace with the reviewed new version.
-$expectedPolicySha = "f180faa567e95669224211d0282b3b437fe79ea9"
+$expectedPolicySha = "3ff09b654a17b9a3b55548e25e6108ee582b00c4"
 $protectedTags = @("v0.1.0", "v0.1.4", "v0.1.5")
 if ($releaseTag -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$' -or $protectedTags -ccontains $releaseTag) {
     throw "releaseTag must be a new semantic version"

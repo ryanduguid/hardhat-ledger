@@ -1,12 +1,12 @@
 {
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "subcontractor-accounting-skills",
-  "version": "0.1.5",
-  "description": "Workflow skills for Australian construction and mining subcontractor accounting: progress claims, retentions, work in progress and over/under-billing, contract cost tracking, plant costing, fuel tax credits, the Coal LSL levy, payroll tax contractor provisions, and contractor superannuation and TPAR. Prep-only. Not lodgment. Not tax advice.",
+  "version": "0.1.6",
+  "description": "Deprecated: use ryanduguid/australian-accounting-skills v0.2.0. This rollback pack retains ten Australian construction and mining subcontractor accounting workflows. Prep-only. Not lodgment. Not tax advice.",
   "author": {
     "name": "Ryan Duguid"
   },
-  "homepage": "https://github.com/ryanduguid/hardhat-ledger",
+  "homepage": "https://github.com/ryanduguid/australian-accounting-skills/releases/tag/v0.2.0",
   "repository": "https://github.com/ryanduguid/hardhat-ledger",
   "license": "MIT",
   "keywords": [

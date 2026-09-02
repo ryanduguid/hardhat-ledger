@@ -41,6 +41,6 @@ jobs:
     name: shared conformance
     permissions:
       contents: read
-    uses: ryanduguid/release-policy/.github/workflows/verify-skills.yml@d08de09646fc46b43d3e59394105005c123496bb
+    uses: ryanduguid/release-policy/.github/workflows/verify-skills.yml@3ff09b654a17b9a3b55548e25e6108ee582b00c4
     with:
       skills-verification-mode: subcontractor-accounting-v1

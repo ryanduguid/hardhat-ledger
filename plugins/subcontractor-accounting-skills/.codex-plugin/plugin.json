@@ -1,13 +1,13 @@
 {
   "name": "subcontractor-accounting-skills",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "license": "MIT",
   "repository": "https://github.com/ryanduguid/hardhat-ledger",
-  "homepage": "https://github.com/ryanduguid/hardhat-ledger",
+  "homepage": "https://github.com/ryanduguid/australian-accounting-skills/releases/tag/v0.2.0",
   "author": {
     "name": "Ryan Duguid"
   },
-  "description": "Australian construction and mining subcontractor workflows: progress claims, retentions, WIP and over/under-billing, contract cost tracking, fuel tax credits, Coal LSL, payroll tax contractor provisions, contractor super and TPAR. Prep-only. Not lodgment. Not tax advice.",
+  "description": "Deprecated: use ryanduguid/australian-accounting-skills v0.2.0. This rollback pack retains ten Australian construction and mining subcontractor accounting workflows. Prep-only. Not lodgment. Not tax advice.",
   "skills": "./skills",
   "keywords": [
     "australian tax",
@@ -26,10 +26,10 @@
     "agent skills"
   ],
   "interface": {
-    "displayName": "Subcontractor accounting skills",
+    "displayName": "Subcontractor accounting skills (deprecated)",
     "developerName": "Ryan Duguid",
-    "shortDescription": "Progress claims, retentions, WIP, fuel tax credits and contractor payroll tax",
-    "longDescription": "Ten workflow skills for Australian construction and mining subcontractor accounting. Each skill encodes the process and the tie-outs, and sends the agent to the primary source for the rates, thresholds and statutory timeframes that change. Outputs are review-ready workpapers. An authorised human reviews, decides and lodges. Not tax advice. Not affiliated with or endorsed by the Australian Taxation Office, any state revenue office, or Coal LSL.",
+    "shortDescription": "Deprecated: use Australian Accounting Skills v0.2.0",
+    "longDescription": "This rollback pack retains ten workflow skills for Australian construction and mining subcontractor accounting. Install Australian Accounting Skills v0.2.0 for maintained releases. Do not enable both packs because they contain duplicate skill names. Outputs remain review-ready workpapers for authorised human review. Not tax advice. Not affiliated with or endorsed by the Australian Taxation Office, any state revenue office, or Coal LSL.",
     "category": "Productivity",
     "capabilities": [
       "Read",
@@ -38,6 +38,6 @@
     "defaultPrompt": [
       "Prepare progress claim 7 for this contract from the cost ledger and the schedule of rates. Show the retention held to date against the contract cap and list anything that does not tie."
     ],
-    "websiteURL": "https://github.com/ryanduguid/hardhat-ledger"
+    "websiteURL": "https://github.com/ryanduguid/australian-accounting-skills/releases/tag/v0.2.0"
   }
 }
