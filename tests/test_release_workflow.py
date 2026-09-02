@@ -9,7 +9,7 @@ import unittest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_POLICY_SHA = "d08de09646fc46b43d3e59394105005c123496bb"
+EXPECTED_POLICY_SHA = "3ff09b654a17b9a3b55548e25e6108ee582b00c4"
 POLICY_CALL = re.compile(
     r"ryanduguid/release-policy/\.github/workflows/"
     r"(?P<workflow>verify-skills|release-skills)\.yml@(?P<sha>[0-9a-f]{40})"

@@ -1,7 +1,7 @@
 {
   "name": "ryanduguid-contracting",
   "interface": {
-    "displayName": "Ryan Duguid contracting plugins"
+    "displayName": "Deprecated: use Australian Accounting Skills"
   },
   "plugins": [
     {

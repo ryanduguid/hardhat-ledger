@@ -7,7 +7,7 @@
   "plugins": [
     {
       "name": "subcontractor-accounting-skills",
-      "description": "Workflow skills for Australian subcontractor accounting: progress claims, retentions, work in progress and over/under-billing, contract cost tracking, plus the regimes a mining-services or earthmoving subcontractor lives with - fuel tax credits, the Coal LSL levy, payroll tax contractor provisions, plant costing, and contractor superannuation and TPAR. Each skill encodes the process and the tie-outs, and sends the agent to the primary source for rates, thresholds and statutory timeframes.",
+      "description": "Deprecated: use ryanduguid/australian-accounting-skills v0.2.0. This legacy marketplace remains available as a tested rollback for its ten contracting skills.",
       "author": {
         "name": "Ryan Duguid"
       },
@@ -22,7 +22,7 @@
       ],
       "source": "./plugins/subcontractor-accounting-skills",
       "strict": true,
-      "homepage": "https://github.com/ryanduguid/hardhat-ledger",
+      "homepage": "https://github.com/ryanduguid/australian-accounting-skills/releases/tag/v0.2.0",
       "license": "MIT"
     }
   ]

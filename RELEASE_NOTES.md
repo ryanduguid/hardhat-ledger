@@ -1,26 +1,28 @@
-# v0.1.5
+# v0.1.6
 
-`v0.1.5` is a release-process recovery for the protected v0.1.4 tag. Release
-run 32839062910 stopped in its read-only consumer-test job because the
-source-archive adapter did not install the tracked PyYAML test dependency.
-Publication never started, and no v0.1.4 release or assets exist.
+Hardhat Ledger now directs new installations to
+[Australian Accounting Skills v0.2.0](https://github.com/ryanduguid/australian-accounting-skills/releases/tag/v0.2.0).
+That release contains these ten contracting skills and has passed clean Claude
+Code, Codex and Skills CLI installation checks.
 
-## Changes since v0.1.4
+## Changes since v0.1.5
 
-- use the dedicated, full-commit-pinned skill-pack release adapter;
-- run the same dependency-aware conformance path on pull requests, `main` and
-  the release tag; and
-- retain isolated consumer testing and a fresh privileged publication checkout.
+- mark the Hardhat marketplace and concrete plugin manifests as deprecated;
+- replace primary installation instructions with the three destination routes;
+- document the duplicate-name constraint, fourteen-day observation and
+  immutable v0.1.5 rollback; and
+- pin release and shared verification workflows, plus the operator runbook, to
+  Release Policy commit `3ff09b654a17b9a3b55548e25e6108ee582b00c4`.
 
-No skill or accounting content changed. The plugin name, ten-skill inventory,
-validation cards, accounting rules and professional-review boundary are
-unchanged from protected tag commit `2f29bb51957888b1f427be44a7a0866ed4f4f5e5`.
+No skill or accounting content changed. The plugin ID, ten-skill inventory,
+validation cards, accounting rules and professional-review boundary remain
+available for rollback.
 
 ## Release assets
 
 ```text
-subcontractor-accounting-skills-0.1.5.zip
-subcontractor-accounting-skills-0.1.5.tar.gz
-subcontractor-accounting-skills-0.1.5.spdx.json
+subcontractor-accounting-skills-0.1.6.zip
+subcontractor-accounting-skills-0.1.6.tar.gz
+subcontractor-accounting-skills-0.1.6.spdx.json
 SHA256SUMS
 ```
