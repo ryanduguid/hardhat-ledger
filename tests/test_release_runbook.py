@@ -28,7 +28,7 @@ FENCE_SUFFIX = re.compile(
 POWERSHELL_FENCE_LANGUAGES = frozenset({"powershell", "pwsh", "ps1"})
 # SHA-256 of compact UTF-8 JSON for the five ordered PowerShell fence bodies.
 APPROVED_POWERSHELL_FENCES_SHA256 = (
-    "ec22fc86dfaf1392709bff9f4c2252a03be688e4d6ff8f30e620428eb8bb818f"
+    "3cb170982251ad10ba4ab17ca580dcada47c3b1560ae8c1279f410628f2e2270"
 )
 EXPECTED_POWERSHELL_FENCES = 5
 POWERSHELL_VERSION_PREREQUISITE = (
@@ -46,7 +46,7 @@ if ($PSVersionTable.PSVersion -lt [version]"7.4") {
 }
 $repo = "ryanduguid/hardhat-ledger"
 $releaseTag = "v0.1.6" # Replace with the reviewed new version.
-$expectedPolicySha = "f180faa567e95669224211d0282b3b437fe79ea9"
+$expectedPolicySha = "3ff09b654a17b9a3b55548e25e6108ee582b00c4"
 $protectedTags = @("v0.1.0", "v0.1.4", "v0.1.5")
 if ($releaseTag -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$' -or $protectedTags -ccontains $releaseTag) {
     throw "releaseTag must be a new semantic version"

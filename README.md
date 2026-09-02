@@ -16,14 +16,20 @@
 
 [![Verify](https://github.com/ryanduguid/hardhat-ledger/actions/workflows/verify.yml/badge.svg)](https://github.com/ryanduguid/hardhat-ledger/actions/workflows/verify.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-4F485E.svg?labelColor=04001F)](LICENSE)
 
+> [!WARNING]
+> Hardhat Ledger is deprecated. Use
+> [Australian Accounting Skills v0.2.0](https://github.com/ryanduguid/australian-accounting-skills/releases/tag/v0.2.0)
+> for maintained installations. That release includes these ten contracting
+> skills and nine Australian public-practice skills.
+
 Claude Code skills for Australian subcontractor accounting: progress claims,
 retentions, work in progress and over/under-billing, contract cost tracking, and
 the regimes a mining-services or earthmoving subcontractor lives with.
 
-Compatibility: the plugin remains `subcontractor-accounting-skills` in the
-`ryanduguid-contracting` marketplace for Claude and Codex, and release asset
-filenames retain that identifier. Both runtimes use the same canonical plugin
-payload under `plugins/subcontractor-accounting-skills/`.
+The v0.1.6 compatibility release keeps the `subcontractor-accounting-skills`
+plugin ID, the `ryanduguid-contracting` marketplace, all ten skill names and
+the existing release asset name. It changes migration guidance and release
+policy pins without changing a skill.
 
 Written independently, from scratch, in my own time and on my own equipment.
 Each skill encodes the *workflow* - the steps, the tie-outs, the exceptions to
@@ -43,29 +49,30 @@ covered by a security of payment Act, and they do not conclude that a worker is
 a contractor rather than an employee. Both are legal characterisations with real
 consequences, and both are flagged for a person.
 
-## Install
+## Migrate to Australian Accounting Skills
+
+Remove or disable `subcontractor-accounting-skills@ryanduguid-contracting`
+before you install the replacement. Both packs contain the same ten contracting
+skill names. Never enable both packs at once.
 
 ### Claude Code plugin
 
-This repo is also a Claude Code plugin marketplace, so the skills install
-together and update with the repo:
-
 ```
-/plugin marketplace add ryanduguid/hardhat-ledger
-/plugin install subcontractor-accounting-skills@ryanduguid-contracting
+/plugin marketplace add ryanduguid/australian-accounting-skills
+/plugin install australian-accounting-skills@ryanduguid
 ```
 
 ### Codex plugin
 
 ```bash
-codex plugin marketplace add ryanduguid/hardhat-ledger
-codex plugin add subcontractor-accounting-skills@ryanduguid-contracting
+codex plugin marketplace add ryanduguid/australian-accounting-skills
+codex plugin add australian-accounting-skills@ryanduguid
 ```
 
 ### Any agent, via the skills CLI
 
 ```bash
-npx skills add ryanduguid/hardhat-ledger
+npx skills add ryanduguid/australian-accounting-skills
 ```
 
 Add `-g` to install into `~/.claude/skills` instead, `-a claude-code` to target
@@ -74,18 +81,26 @@ one agent, and `-l` to list the skills without installing anything.
 ### By hand
 
 ```bash
-git clone https://github.com/ryanduguid/hardhat-ledger
+git clone --branch v0.2.0 --depth 1 https://github.com/ryanduguid/australian-accounting-skills
 mkdir -p ~/.claude/skills
-cp -r hardhat-ledger/plugins/subcontractor-accounting-skills/skills/* ~/.claude/skills/
+cp -r australian-accounting-skills/.claude/skills/* ~/.claude/skills/
 ```
 
 PowerShell:
 
 ```powershell
-git clone https://github.com/ryanduguid/hardhat-ledger
+git clone --branch v0.2.0 --depth 1 https://github.com/ryanduguid/australian-accounting-skills
 New-Item -ItemType Directory -Force "$HOME/.claude/skills"
-Copy-Item -Recurse hardhat-ledger/plugins/subcontractor-accounting-skills/skills/* "$HOME/.claude/skills/"
+Copy-Item -Recurse australian-accounting-skills/.claude/skills/* "$HOME/.claude/skills/"
 ```
+
+### Roll back to Hardhat Ledger v0.1.5
+
+Use the immutable
+[v0.1.5 release](https://github.com/ryanduguid/hardhat-ledger/releases/tag/v0.1.5)
+if the replacement fails one of your workflows. Disable Australian Accounting
+Skills before restoring this pack. The repository and its release assets stay
+available throughout the observation period.
 
 ## Skills
 
@@ -158,17 +173,16 @@ workflow delegates to a full-commit-pinned, dependency-aware shared skill-pack
 verifier and release policy, so consumer tests do not run with release
 authority and the privileged job starts from a fresh checkout.
 
-These remain review-schedule skills, not SG or TPAR calculators or final tax,
-accounting or legal advice. Use still requires current-source checks and
-qualified human review. See [RELEASING.md](RELEASING.md) for the operator gate
-and verification procedure, and
-[the v0.1.5 notes](docs/releases/v0.1.5.md) for the release-process recovery.
+These remain review-schedule skills rather than SG or TPAR calculators or final
+tax, accounting or legal advice. Use requires current-source checks and
+qualified human review. [RELEASING.md](RELEASING.md) defines the operator gate,
+and [the v0.1.5 notes](docs/releases/v0.1.5.md) preserve the last compatible
+rollback evidence.
 
-The ten skill names will later move into a broader Australian accounting pack
-only after the replacement passes the same install and safety gates. The
-[consolidation transition](docs/consolidation-transition.md) records the
-compatibility, rollback and owner-approval conditions. This release does not
-deprecate the repository.
+Australian Accounting Skills v0.2.0 now owns maintained releases for all ten
+skill names. The [consolidation transition](docs/consolidation-transition.md)
+records the verified replacement, duplicate-name constraint, observation and
+rollback conditions.
 
 ## Verification
 
